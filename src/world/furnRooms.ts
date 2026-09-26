@@ -235,6 +235,10 @@ export function buildLiving(b: GeoBuilder, wb: GeoBuilder, g: Glows): void {
   ST.cyl(0.03, 0.04, 0.5, 6, PAL.woodDark, 0, 0.26, 0);
   ST.cyl(0.14, 0.16, 0.03, 12, PAL.woodDark, 0, 0.015, 0);
   tableLamp(ST, ST.on(g.house), 0, 0.55, 0, PAL.ellieMain);
+  // knitted pouf
+  const pf = FURN.pouf;
+  W.sphere(0.27, 14, 8, PAL.fabricRose, cx(pf), 0.19, cz(pf), { scale: [1, 0.7, 1] });
+  for (let i = 0; i < 6; i++) W.torus(0.27 - Math.abs(i - 2.5) * 0.02, 0.012, 4, 18, shadeHex(PAL.fabricRose, 0.9), cx(pf), 0.07 + i * 0.045, cz(pf), { rot: [Math.PI / 2, 0, 0], ink: false });
   // bookcase (NE corner, facing −X)
   const bc = FURN.bookcase;
   const BC = new Frame(b, IN.EAST_IN, 0, cz(bc), -Math.PI / 2);

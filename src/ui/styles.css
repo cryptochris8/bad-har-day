@@ -403,6 +403,7 @@
 }
 
 .bhd-swatch {
+  position: relative;
   width: 40px;
   height: 40px;
   flex: none;
@@ -416,6 +417,13 @@
   pointer-events: auto;
   touch-action: manipulation;
   transition: transform 0.15s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.15s;
+}
+/* Invisible hit area so every swatch is a ≥ 44 px target (the gaps stay free). */
+.bhd-swatch::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
 }
 .bhd-swatch.is-selected {
   transform: scale(1.14) translateY(-2px);
@@ -533,6 +541,9 @@
   scrollbar-width: thin;
   scrollbar-color: var(--bhd-ink-soft) transparent;
   -webkit-overflow-scrolling: touch;
+}
+.bhd-scroll > * {
+  flex-shrink: 0;
 }
 .bhd-scroll::-webkit-scrollbar {
   width: 8px;
@@ -1491,7 +1502,7 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 40px;
+  min-height: 44px;
   min-width: 56px;
   padding: 4px 12px;
   border: 2.5px solid var(--bhd-plum);
@@ -1646,6 +1657,9 @@
     transform: rotate(360deg);
   }
 }
+.bhd-fam__preview > * {
+  flex-shrink: 0;
+}
 .bhd-fam__face {
   position: relative;
   width: 100%;
@@ -1687,12 +1701,17 @@
   gap: 4px;
   padding: 2px 6px 6px 2px;
 }
+.bhd-setrow--name {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
 .bhd-fam__namebox {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 1 1 auto;
-  max-width: 340px;
+  max-width: 420px;
 }
 .bhd-input {
   flex: 1 1 auto;
@@ -3777,7 +3796,7 @@
   padding-top: calc(clamp(74px, 15vh, 120px) + var(--bhd-safe-t));
 }
 .bhd-play:has(.bhd-portraits:not([hidden])) .bhd-instr-layer {
-  padding-top: calc(clamp(150px, 26vh, 190px) + var(--bhd-safe-t));
+  padding-top: calc(var(--bhd-portraits-bottom, 190px) + 10px);
 }
 .bhd-instr {
   display: flex;
@@ -3843,6 +3862,9 @@
   text-overflow: ellipsis;
 }
 .bhd-prompt__hold {
+  display: none;
+}
+.bhd-prompt .bhd-tbtn__t {
   display: none;
 }
 .bhd-prompt.is-hold .bhd-prompt__hold {
@@ -5097,23 +5119,40 @@
   }
   .bhd-fam__preview {
     width: 100%;
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    row-gap: 0;
+    align-items: center;
     padding: 6px 12px;
   }
   .bhd-fam__face {
+    grid-row: 1 / 3;
     width: 84px;
     max-width: 84px;
   }
   .bhd-fam__preview .bhd-fam__name {
-    font-size: 26px;
+    align-self: end;
+    justify-self: start;
+    font-size: 28px;
   }
   .bhd-fam__role {
+    align-self: start;
     text-align: left;
   }
   .bhd-fam__tabs {
-    justify-content: flex-start;
+    justify-content: center;
+    gap: 4px;
+  }
+  .bhd-fam__tabs .bhd-tab {
+    padding-right: 4px;
+  }
+  .bhd-fam__tabs .bhd-tab.is-on {
+    padding-right: 12px;
+  }
+  .bhd-fam__tabs .bhd-tab:not(.is-on) .bhd-tab__t {
+    display: none;
   }
   .bhd-fam__card,
   .bhd-set__card,
@@ -5188,10 +5227,17 @@
     width: 128px;
   }
   .bhd-portraits {
-    top: calc(var(--bhd-edge) + var(--bhd-safe-t) + 186px);
+    top: calc(var(--bhd-hud-bottom, 190px) + 26px);
     left: 0;
     right: 0;
     transform: none;
+  }
+  /* While the portraits are up they ARE the task list: keep the top band short. */
+  .bhd-play:has(.bhd-portraits:not([hidden])) .bhd-tasks {
+    display: none;
+  }
+  .bhd-play:has(.bhd-portraits:not([hidden])) .bhd-instr__s {
+    display: none;
   }
   .bhd-portrait {
     width: 84px;
@@ -5202,9 +5248,6 @@
   }
   .bhd-instr {
     max-width: 92vw;
-  }
-  .bhd-play:has(.bhd-portraits:not([hidden])) .bhd-instr-layer {
-    padding-top: calc(360px + var(--bhd-safe-t));
   }
   .bhd-boss {
     grid-template-columns: 1fr;
@@ -5293,7 +5336,17 @@
     font-size: 22px;
   }
   .bhd-fam__face {
-    max-width: 120px;
+    max-width: 110px;
+  }
+  .bhd-fam__card {
+    gap: 6px;
+  }
+  .bhd-fam__tabs .bhd-tab__face {
+    width: 30px;
+    height: 30px;
+  }
+  .bhd-setrow {
+    min-height: 46px;
   }
   .bhd-pause__zzz,
   .bhd-pause__sub {
@@ -5328,6 +5381,29 @@
   }
   .bhd-rc__btns .bhd-btn--lg {
     min-height: 46px;
+  }
+  .bhd-rc__school {
+    font-size: 22px;
+  }
+  .bhd-rc__head {
+    margin-bottom: 2px;
+  }
+  .bhd-rc__time {
+    font-size: 38px;
+  }
+  .bhd-rc__row {
+    min-height: 25px;
+  }
+  .bhd-rc__star {
+    width: 20px;
+    height: 20px;
+  }
+  .bhd-rc__rowico {
+    width: 22px;
+    height: 22px;
+  }
+  .bhd-rc__paper {
+    padding-top: 10px;
   }
   .bhd-rc__hint {
     bottom: 16px;
@@ -5375,9 +5451,6 @@
   }
   .bhd-portrait.is-current {
     transform: translateY(2px) scale(1.08);
-  }
-  .bhd-play:has(.bhd-portraits:not([hidden])) .bhd-instr-layer {
-    padding-top: calc(118px + var(--bhd-safe-t));
   }
   .bhd-instr-layer {
     padding-top: calc(62px + var(--bhd-safe-t));

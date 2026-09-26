@@ -80,24 +80,6 @@ export function buildKitchen(b: GeoBuilder, wb: GeoBuilder, g: Glows): void {
   // lunch counter: a cutting board + a fruit bowl at the back, leaving the front clear
   const lx = (FURN.lunchCounter.r.x0 + FURN.lunchCounter.r.x1) / 2;
   fN.rbox(0.4, 0.025, 0.26, 0.012, PAL.woodWarm, lx - 0.45, COUNTER_H + 0.013, 0.14);
-  fN.lathe(
-    [
-      [0, 0],
-      [0.09, 0.005],
-      [0.14, 0.06],
-      [0.13, 0.07],
-      [0, 0.05],
-    ],
-    12,
-    PAL.fabricMustard,
-    lx + 0.45,
-    COUNTER_H,
-    0.15,
-    { smooth: true },
-  );
-  fN.ball(0.045, 1, PAL.confettiA, lx + 0.42, COUNTER_H + 0.08, 0.13, { smooth: true });
-  fN.ball(0.042, 1, PAL.flowerYellow, lx + 0.49, COUNTER_H + 0.085, 0.17, { smooth: true, scale: [1.3, 0.8, 0.8] });
-  fN.ball(0.04, 1, 0x9ccf5a, lx + 0.47, COUNTER_H + 0.08, 0.11, { smooth: true });
   // canisters by the corner
   const cx = (FURN.cornerCounter.r.x0 + FURN.cornerCounter.r.x1) / 2;
   [0.2, 0.15, 0.11].forEach((h, i) => {

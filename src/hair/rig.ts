@@ -19,14 +19,22 @@ import { buildHairGeometry, writeTube } from './mesh';
 import { COLLIDE_BACK, COLLIDE_FRONT, COLLIDE_HEAD, HairSim } from './sim';
 import { brushFalloffU, brushFalloffV, brushPartPush, clamp01, colOf, sampleLock, snagEnvelope } from './space';
 import type { BrushContact, HairBuildOpts, HairRig } from './types';
-import { hashInts } from '../core/rng';
 
 const sstep = (e0: number, e1: number, x: number): number => {
   const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 };
 const damp = (a: number, b: number, rate: number, dt: number): number => a + (b - a) * (1 - Math.exp(-rate * dt));
-const rnd = (a: number, b: number, c = 0): number => hashInts(a, b, c) / 4294967296;
+/** Fixed-arity integer hash → 0..1 (no rest-parameter array: called hundreds of times per frame). */
+function rnd(a: number, b: number, c: number): number {
+  let h = Math.imul(a | 0, 0x9e3779b1) ^ Math.imul(b | 0, 0x85ebca6b) ^ Math.imul(c | 0, 0xc2b2ae35);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x2c1b3c6d);
+  h ^= h >>> 12;
+  h = Math.imul(h, 0x297a2d39);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
 
 /** Runtime state of one lock. */
 interface ChainRT {
@@ -379,7 +387,8 @@ export class GirlHairRig implements HairRig {
     this.snagT[row * this.cols + col] = 0;
     // A sideways kick to the lock's hanging nodes.
     const cu = (col + 0.5) / this.cols;
-    for (const rt of this.outer) {
+    for (let _i1 = 0; _i1 < this.outer.length; _i1++) {
+      const rt = this.outer[_i1]!;
       if (colOf(rt.c.u, this.cols) !== col) continue;
       const count = rt.c.cp - rt.c.pinned + 1;
       for (let j = 1; j < count; j++) {
@@ -428,7 +437,7 @@ export class GirlHairRig implements HairRig {
       const jx = e[4]! * -0.4 + e[12]!;
       const jy = e[5]! * -0.4 + e[13]! + 0.4;
       const jz = e[6]! * -0.4 + e[14]!;
-      if (Math.hypot(e[12]!, e[13]!, e[14]!) > 0.6 || Math.hypot(jx, jy, jz) > 0.7) this.sim.reset();
+      if (Math.sqrt(e[12]! * e[12]! + e[13]! * e[13]! + e[14]! * e[14]!) > 0.6 || Math.sqrt(jx * jx + jy * jy + jz * jz) > 0.7) this.sim.reset();
       else this.sim.transfer(e);
       this.prevM.copy(M);
     }
@@ -437,7 +446,7 @@ export class GirlHairRig implements HairRig {
     const gy = me[5]! * -9.81;
     const gz = me[6]! * -9.81;
     // Keep the styled fall hanging with gravity when the head tilts (hair flips, looking up/down, lying down).
-    const gl = Math.hypot(gx, gy, gz);
+    const gl = Math.sqrt(gx * gx + gy * gy + gz * gz);
     if (gl > 1e-6) {
       _gd.set(gx / gl, gy / gl, gz / gl);
       _qg.setFromUnitVectors(_down, _gd);
@@ -576,7 +585,8 @@ export class GirlHairRig implements HairRig {
     const b = this.brush;
     if (b.pressure <= 0.02) return;
     const hwU = b.width / 2;
-    for (const rt of this.outer) {
+    for (let _i2 = 0; _i2 < this.outer.length; _i2++) {
+      const rt = this.outer[_i2]!;
       const wu = brushFalloffU(rt.c.u - b.u, hwU * 1.3);
       if (wu <= 0) continue;
       const count = rt.c.cp - rt.c.pinned + 1;
@@ -598,176 +608,165 @@ export class GirlHairRig implements HairRig {
     }
   }
 
-  /** Full evaluation: rings, proxy, deformations, vertex writes, sprites. */
+  /** Full evaluation: rings, proxy, deformations, vertex writes, sprites. Split into small stages so the
+   *  JIT inlines the math helpers (keeps the per-frame path free of boxed-number garbage). */
   private evaluate(step: number): void {
-    const geo = this.geo;
     const b = this.bed;
-    const sim = this.sim;
+    for (let i = 0; i < this.outer.length; i++) this.outerBase(this.outer[i]!, b);
+    this.updateProxy();
+    for (let i = 0; i < this.outer.length; i++) this.deformOuter(this.outer[i]!, b);
+    for (let k = 0; k < this.under.length; k++) this.writeUnder(k);
+    for (let i = 0; i < this.front.length; i++) this.writeSimple(this.front[i]!, b, 1, 0.004, 0.5);
+    for (let i = 0; i < this.rigid.length; i++) this.writeSimple(this.rigid[i]!, b, 1, 0.003, 0);
+    const grow = sstep(0.02, 0.35, b); // bedhead tufts grow out
+    for (let i = 0; i < this.tufts.length; i++) this.writeSimple(this.tufts[i]!, b, grow, 0.003, 0);
+    if (this.tangleDirty) this.writeTangleAttr();
+    const g = this.geo.geometry;
+    (g.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    (g.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true;
+    this.updateSprites(step, this.time);
+  }
+
+  /** Outer lock rings + its undeformed outer surface (for the proxy). */
+  private outerBase(rt: ChainRT, b: number): void {
+    this.fillCps(rt);
+    this.rings(rt, b, 1);
+    const c = rt.c;
+    for (let r = 0; r < c.rings; r++) {
+      const o = r * 3;
+      const k = rt.hd[r]! * 1.05;
+      rt.surf[o] = rt.C[o]! + rt.O[o]! * k;
+      rt.surf[o + 1] = rt.C[o + 1]! + rt.O[o + 1]! * k;
+      rt.surf[o + 2] = rt.C[o + 2]! + rt.O[o + 2]! * k;
+    }
+    const lo = (c.rings - 1) * 3;
+    const tl = rt.hw[c.rings - 1]! * c.tipK;
+    rt.tip[0] = rt.C[lo]! + rt.T[lo]! * tl;
+    rt.tip[1] = rt.C[lo + 1]! + rt.T[lo + 1]! * tl;
+    rt.tip[2] = rt.C[lo + 2]! + rt.T[lo + 2]! * tl;
+  }
+
+  /** Gameplay deformations on one outer lock (tangle twist/kink/knots/frizz, snag wobble, brush), then write it. */
+  private deformOuter(rt: ChainRT, b: number): void {
+    const c = rt.c;
     const cols = this.cols;
     const rows = this.rows;
-    const disp = this.display;
+    const col = colOf(c.u, cols);
+    for (let r = 0; r < c.rings; r++) {
+      const v = c.ringV[r]!;
+      const tg = sampleLock(this.display, cols, rows, c.u, v);
+      rt.tg[r] = tg;
+      const o = r * 3;
+      // Knot blobs sit at section centres.
+      const fr = v * rows;
+      const dc = fr - Math.floor(fr) - 0.5;
+      const knot = tg * (0.25 + 0.55 * Math.exp(-(dc * dc) / 0.03));
+      rt.twist[r] = tg * 1.15 * Math.sin(v * 19 + c.rnd * 6.3);
+      rt.frizz[r] = tg * 0.008 + knot * 0.012 + b * 0.0035;
+      rt.hw[r]! *= 1 + knot * 0.45;
+      rt.hd[r]! *= 1 + knot * 0.9;
+      let sk = tg * 0.012 * Math.sin(v * 23 + c.rnd * 9);
+      const okk = tg * 0.008 * Math.cos(v * 29 + c.rnd * 4) + knot * 0.006;
+      // Snag wobble (the cell this ring is in).
+      const row = Math.min(rows - 1, Math.floor(v * rows));
+      const st = this.snagT[row * cols + col]!;
+      const env = snagEnvelope(st);
+      if (env > 0) sk += Math.sin(st * 55) * env * 0.016;
+      rt.C[o]! += rt.S[o]! * sk + rt.O[o]! * okk;
+      rt.C[o + 1]! += rt.S[o + 1]! * sk + rt.O[o + 1]! * okk;
+      rt.C[o + 2]! += rt.S[o + 2]! * sk + rt.O[o + 2]! * okk;
+      if (this.brush.pressure > 0.005) this.brushRing(rt, r, v);
+    }
+    writeTube(this.geo, rt.rec, rt.C, rt.T, rt.S, rt.O, rt.hw, rt.hd, rt.twist, rt.frizz, c.tipK);
+  }
+
+  /** Brush contact on one ring: flatten + part + drag along the stroke. */
+  private brushRing(rt: ChainRT, r: number, v: number): void {
     const br = this.brush;
-    const brushOn = br.pressure > 0.005;
     const hwU = br.width / 2;
-    const t = this.time;
+    const du = rt.c.u - br.u;
+    const inf = br.pressure * brushFalloffU(du, hwU) * brushFalloffV(v - br.v);
+    const push = brushPartPush(du, hwU) * br.pressure * brushFalloffV(v - br.v, 0.1, 0.22);
+    if (inf <= 0 && push === 0) return;
+    const o = r * 3;
+    const press = -inf * rt.hd[r]! * 1.6;
+    // +u = -side (u grows toward head-space -X, side ~ +X for a downward lock).
+    const side = -push * 0.022 - Math.max(-1, Math.min(1, br.du * 0.8)) * inf * 0.012;
+    const drag = Math.max(-1, Math.min(1, br.dv * 0.8)) * inf * 0.014;
+    rt.C[o]! += rt.O[o]! * press + rt.S[o]! * side + rt.T[o]! * drag;
+    rt.C[o + 1]! += rt.O[o + 1]! * press + rt.S[o + 1]! * side + rt.T[o + 1]! * drag;
+    rt.C[o + 2]! += rt.O[o + 2]! * press + rt.S[o + 2]! * side + rt.T[o + 2]! * drag;
+    // Combed flat and a touch narrower (bristles gather the lock) -> visible parting lines.
+    rt.hd[r]! *= 1 - 0.55 * inf;
+    rt.hw[r]! *= 1 - 0.12 * inf;
+    rt.twist[r]! *= 1 - inf;
+    rt.frizz[r]! *= 1 - 0.8 * inf;
+  }
 
-    // Outer locks.
-    for (const rt of this.outer) {
-      this.fillCps(rt);
-      this.rings(rt, b, 1);
-      const c = rt.c;
-      // Undeformed surface for the proxy.
-      for (let r = 0; r < c.rings; r++) {
-        const o = r * 3;
-        rt.surf[o] = rt.C[o]! + rt.O[o]! * rt.hd[r]! * 1.05;
-        rt.surf[o + 1] = rt.C[o + 1]! + rt.O[o + 1]! * rt.hd[r]! * 1.05;
-        rt.surf[o + 2] = rt.C[o + 2]! + rt.O[o + 2]! * rt.hd[r]! * 1.05;
+  /** Under lock k: between its outer neighbours, tucked in behind them. */
+  private writeUnder(k: number): void {
+    const ul = this.layout.under[k]!;
+    const U = this.under[k]!;
+    const A = this.outer[ul.left]!;
+    const B = this.outer[ul.right]!;
+    for (let r = 0; r < ul.rings; r++) {
+      const ra = ul.ringStart + r;
+      const o = r * 3;
+      const oa = ra * 3;
+      for (let a = 0; a < 3; a++) {
+        U.O[o + a] = A.O[oa + a]! + B.O[oa + a]!;
+        U.T[o + a] = A.T[oa + a]! + B.T[oa + a]!;
+        U.S[o + a] = A.S[oa + a]! + B.S[oa + a]!;
       }
-      const lo = (c.rings - 1) * 3;
-      const tl = rt.hw[c.rings - 1]! * c.tipK;
-      rt.tip[0] = rt.C[lo]! + rt.T[lo]! * tl;
-      rt.tip[1] = rt.C[lo + 1]! + rt.T[lo + 1]! * tl;
-      rt.tip[2] = rt.C[lo + 2]! + rt.T[lo + 2]! * tl;
+      normalize3(U.O, o);
+      normalize3(U.T, o);
+      normalize3(U.S, o);
+      const hd = (A.hd[ra]! + B.hd[ra]!) * 0.5;
+      const inset = ul.inset + hd * 0.35;
+      for (let a = 0; a < 3; a++) U.C[o + a] = (A.C[oa + a]! + B.C[oa + a]!) * 0.5 - U.O[o + a]! * inset;
+      U.hw[r] = (A.hw[ra]! + B.hw[ra]!) * 0.5 * ul.widthK;
+      U.hd[r] = hd * 0.8;
+      U.frizz[r] = (A.frizz[ra]! + B.frizz[ra]!) * 0.4;
     }
-    this.updateProxy();
+    writeTube(this.geo, U.rec, U.C, U.T, U.S, U.O, U.hw, U.hd, null, U.frizz, 1.3);
+  }
 
-    // Gameplay deformations on the outer locks.
-    for (const rt of this.outer) {
-      const c = rt.c;
-      const col = colOf(c.u, cols);
-      for (let r = 0; r < c.rings; r++) {
-        const v = c.ringV[r]!;
-        const tg = sampleLock(disp, cols, rows, c.u, v);
-        rt.tg[r] = tg;
-        const o = r * 3;
-        // Knot blobs sit at section centres.
-        const fr = v * rows;
-        const dc = fr - Math.floor(fr) - 0.5;
-        const knot = tg * (0.25 + 0.55 * Math.exp(-(dc * dc) / 0.03));
-        rt.twist[r] = tg * 1.15 * Math.sin(v * 19 + c.rnd * 6.3);
-        rt.frizz[r] = tg * 0.008 + knot * 0.012 + b * 0.0035;
-        rt.hw[r]! *= 1 + knot * 0.45;
-        rt.hd[r]! *= 1 + knot * 0.9;
-        let ox = 0;
-        let oy = 0;
-        let oz = 0;
-        let sk = tg * 0.012 * Math.sin(v * 23 + c.rnd * 9);
-        const okk = tg * 0.008 * Math.cos(v * 29 + c.rnd * 4) + knot * 0.006;
-        // Snag wobble (the cell this ring is in).
-        const row = Math.min(rows - 1, Math.floor(v * rows));
-        const st = this.snagT[row * cols + col]!;
-        const env = snagEnvelope(st);
-        if (env > 0) sk += Math.sin(st * 55) * env * 0.016;
-        ox += rt.S[o]! * sk + rt.O[o]! * okk;
-        oy += rt.S[o + 1]! * sk + rt.O[o + 1]! * okk;
-        oz += rt.S[o + 2]! * sk + rt.O[o + 2]! * okk;
-        // Brush: flatten + part + drag.
-        if (brushOn) {
-          const du = c.u - br.u;
-          const inf = br.pressure * brushFalloffU(du, hwU) * brushFalloffV(v - br.v);
-          const push = brushPartPush(du, hwU) * br.pressure * brushFalloffV(v - br.v, 0.1, 0.22);
-          if (inf > 0 || push !== 0) {
-            const press = -inf * rt.hd[r]! * 1.3;
-            // +u = −side (u grows toward head-space −X, side ≈ +X for a downward lock).
-            const part = -push * 0.011;
-            const dragU = -Math.max(-1, Math.min(1, br.du * 0.8)) * inf * 0.01;
-            const dragV = Math.max(-1, Math.min(1, br.dv * 0.8)) * inf * 0.012;
-            ox += rt.O[o]! * press + rt.S[o]! * (part + dragU) + rt.T[o]! * dragV;
-            oy += rt.O[o + 1]! * press + rt.S[o + 1]! * (part + dragU) + rt.T[o + 1]! * dragV;
-            oz += rt.O[o + 2]! * press + rt.S[o + 2]! * (part + dragU) + rt.T[o + 2]! * dragV;
-            rt.hd[r]! *= 1 - 0.5 * inf;
-            rt.hw[r]! *= 1 + 0.18 * inf;
-            rt.twist[r]! *= 1 - inf;
-            rt.frizz[r]! *= 1 - 0.8 * inf;
-          }
-        }
-        rt.C[o]! += ox;
-        rt.C[o + 1]! += oy;
-        rt.C[o + 2]! += oz;
+  /** Face-framing locks, bangs, tufts: rings + bedhead frizz (+ a messy twist) and write. */
+  private writeSimple(rt: ChainRT, b: number, widthScale: number, frizzK: number, twistK: number): void {
+    this.fillCps(rt);
+    this.rings(rt, b, widthScale);
+    const c = rt.c;
+    for (let r = 0; r < c.rings; r++) {
+      rt.frizz[r] = b * frizzK;
+      rt.twist[r] = twistK > 0 ? b * twistK * Math.sin(c.ringV[r]! * 14 + c.rnd * 5) : 0;
+    }
+    writeTube(this.geo, rt.rec, rt.C, rt.T, rt.S, rt.O, rt.hw, rt.hd, twistK > 0 ? rt.twist : null, rt.frizz, c.tipK);
+  }
+
+  /** Per-vertex tangle attribute (only when the displayed field changed). */
+  private writeTangleAttr(): void {
+    this.tangleDirty = false;
+    const ta = this.geo.tangle;
+    for (let i = 0; i < this.outer.length; i++) {
+      const rt = this.outer[i]!;
+      const rec = rt.rec;
+      for (let r = 0; r < rec.rings; r++) {
+        const v = rt.tg[r]!;
+        for (let j = 0; j < rec.sides; j++) ta[rec.v0 + r * rec.sides + j] = v;
       }
-      writeTube(geo, rt.rec, rt.C, rt.T, rt.S, rt.O, rt.hw, rt.hd, rt.twist, rt.frizz, c.tipK);
+      ta[rec.v0 + rec.rings * rec.sides] = rt.tg[rec.rings - 1]!;
     }
-
-    // Under locks: between their outer neighbours, tucked in behind.
-    this.layout.under.forEach((ul, k) => {
-      const U = this.under[k]!;
+    for (let k = 0; k < this.under.length; k++) {
+      const ul = this.layout.under[k]!;
+      const rec = this.under[k]!.rec;
       const A = this.outer[ul.left]!;
       const B = this.outer[ul.right]!;
-      for (let r = 0; r < ul.rings; r++) {
-        const ra = ul.ringStart + r;
-        const o = r * 3;
-        const oa = ra * 3;
-        for (let a = 0; a < 3; a++) {
-          const ov = A.O[oa + a]! + B.O[oa + a]!;
-          U.O[o + a] = ov;
-          U.T[o + a] = A.T[oa + a]! + B.T[oa + a]!;
-          U.S[o + a] = A.S[oa + a]! + B.S[oa + a]!;
-        }
-        normalize3(U.O, o);
-        normalize3(U.T, o);
-        normalize3(U.S, o);
-        const hd = (A.hd[ra]! + B.hd[ra]!) * 0.5;
-        for (let a = 0; a < 3; a++) U.C[o + a] = (A.C[oa + a]! + B.C[oa + a]!) * 0.5 - U.O[o + a]! * (ul.inset + hd * 0.35);
-        U.hw[r] = (A.hw[ra]! + B.hw[ra]!) * 0.5 * ul.widthK;
-        U.hd[r] = hd * 0.8;
-        U.frizz[r] = (A.frizz[ra]! + B.frizz[ra]!) * 0.4;
+      for (let r = 0; r < rec.rings; r++) {
+        const v = (A.tg[ul.ringStart + r]! + B.tg[ul.ringStart + r]!) * 0.5;
+        for (let j = 0; j < rec.sides; j++) ta[rec.v0 + r * rec.sides + j] = v;
       }
-      writeTube(geo, U.rec, U.C, U.T, U.S, U.O, U.hw, U.hd, null, U.frizz, 1.3);
-    });
-
-    // Face-framing locks.
-    for (const rt of this.front) {
-      this.fillCps(rt);
-      this.rings(rt, b, 1);
-      for (let r = 0; r < rt.c.rings; r++) {
-        rt.frizz[r] = b * 0.004;
-        rt.twist[r] = b * 0.5 * Math.sin(rt.c.ringV[r]! * 14 + rt.c.rnd * 5);
-      }
-      writeTube(geo, rt.rec, rt.C, rt.T, rt.S, rt.O, rt.hw, rt.hd, rt.twist, rt.frizz, rt.c.tipK);
     }
-    // Bangs (rigid).
-    for (const rt of this.rigid) {
-      this.fillCps(rt);
-      this.rings(rt, b, 1);
-      for (let r = 0; r < rt.c.rings; r++) rt.frizz[r] = b * 0.003;
-      writeTube(geo, rt.rec, rt.C, rt.T, rt.S, rt.O, rt.hw, rt.hd, null, rt.frizz, rt.c.tipK);
-    }
-    // Bedhead tufts grow out (+ a little springy bob when shaken).
-    const grow = sstep(0.02, 0.35, b);
-    for (const rt of this.tufts) {
-      this.fillCps(rt);
-      this.rings(rt, b, grow);
-      for (let r = 0; r < rt.c.rings; r++) rt.frizz[r] = 0.003 * b;
-      writeTube(geo, rt.rec, rt.C, rt.T, rt.S, rt.O, rt.hw, rt.hd, null, rt.frizz, rt.c.tipK);
-    }
-
-    // Per-vertex tangle (only when it changed).
-    if (this.tangleDirty) {
-      this.tangleDirty = false;
-      const ta = geo.tangle;
-      for (const rt of this.outer) {
-        const rec = rt.rec;
-        for (let r = 0; r < rec.rings; r++) {
-          const v = rt.tg[r]!;
-          for (let j = 0; j < rec.sides; j++) ta[rec.v0 + r * rec.sides + j] = v;
-        }
-        ta[rec.v0 + rec.rings * rec.sides] = rt.tg[rec.rings - 1]!;
-      }
-      this.layout.under.forEach((ul, k) => {
-        const rec = this.under[k]!.rec;
-        const A = this.outer[ul.left]!;
-        const B = this.outer[ul.right]!;
-        for (let r = 0; r < rec.rings; r++) {
-          const v = (A.tg[ul.ringStart + r]! + B.tg[ul.ringStart + r]!) * 0.5;
-          for (let j = 0; j < rec.sides; j++) ta[rec.v0 + r * rec.sides + j] = v;
-        }
-      });
-      (geo.geometry.getAttribute('aTangle') as THREE.BufferAttribute).needsUpdate = true;
-    }
-
-    (geo.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
-    (geo.geometry.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true;
-    this.updateSprites(step, t);
+    (this.geo.geometry.getAttribute('aTangle') as THREE.BufferAttribute).needsUpdate = true;
   }
 
   /** Control points: rigid ones from the (bedhead-lerped) rest, hanging ones from the sim. */
@@ -805,7 +804,7 @@ export class GirlHairRig implements HairRig {
       let sx = ty * rz - tz * ry;
       let sy = tz * rx - tx * rz;
       let sz = tx * ry - ty * rx;
-      const sl = Math.hypot(sx, sy, sz);
+      const sl = Math.sqrt(sx * sx + sy * sy + sz * sz);
       if (sl < 0.08) {
         sx = psx;
         sy = psy;
@@ -1012,10 +1011,10 @@ export class GirlHairRig implements HairRig {
       } else {
         const g = i - n * 3 - FLYAWAYS;
         u = 0.22 + 0.56 * rnd(seed, g, 21);
-        v = 0.1 + 0.5 * rnd(seed, g, 22);
+        v = 0.22 + 0.45 * rnd(seed, g, 22);
         const tg = sampleLock(this.display, this.cols, this.rows, u, v);
         const tw = Math.max(0, Math.sin(t * (1.6 + rnd(seed, g, 23)) + g * 2.1));
-        target = this.shine * (1 - tg) * tw * tw * tw * 0.95;
+        target = sstep(0.25, 0.8, this.shine) * (1 - tg) * tw * tw * tw * 0.95;
         size = 0.02 + 0.012 * tw;
         rot = t * 0.4 + g;
         hex = PAL.sparkle;
@@ -1064,7 +1063,7 @@ export class GirlHairRig implements HairRig {
 }
 
 function normalize3(a: Float32Array, o: number): void {
-  const l = Math.hypot(a[o]!, a[o + 1]!, a[o + 2]!);
+  const l = Math.sqrt(a[o]! * a[o]! + a[o + 1]! * a[o + 1]! + a[o + 2]! * a[o + 2]!);
   if (l > 1e-9) {
     a[o]! /= l;
     a[o + 1]! /= l;

@@ -21,24 +21,24 @@ import type { Dog, DogAction, DogLook, DogPose, DogSocket, Emote, PlayOpts } fro
 // ── dimensions ────────────────────────────────────────────────────────────────
 
 export const DOG = {
-  bodyY: 0.4,
+  bodyY: 0.36,
   /** Chest (front) and rump (rear) body centres along Z. */
   frontZ: 0.17,
   rearZ: -0.2,
-  bodyW: 0.135,
-  bodyH: 0.15,
-  shoulderX: 0.085,
-  hipX: 0.085,
-  shoulderY: 0.37,
-  hipY: 0.37,
-  upperL: 0.15,
-  lowerL: 0.15,
+  bodyW: 0.15,
+  bodyH: 0.155,
+  shoulderX: 0.092,
+  hipX: 0.092,
+  shoulderY: 0.33,
+  hipY: 0.33,
+  upperL: 0.135,
+  lowerL: 0.135,
   pawY: 0.045,
   headR: 0.13,
   /** Head bone (skull centre) rest position (model). */
-  headY: 0.64,
+  headY: 0.6,
   headZ: 0.32,
-  neckY: 0.47,
+  neckY: 0.43,
   neckZ: 0.23,
 } as const;
 
@@ -226,8 +226,8 @@ function dogGeometry(coat: DogCoat, rest: THREE.Matrix4[]): THREE.BufferGeometry
   hb.sphere(1, 8, 5, main, { at: [0, -0.025, 0.035], scale: [R * 0.85, R * 0.72, R * 0.8], smooth: true, ink: false });
   // Upper muzzle + nose + mouth line.
   hb.sphere(1, 10, 6, light, { at: [0, -0.028, 0.118], scale: [0.068, 0.05, 0.07], smooth: true });
-  hb.sphere(1, 8, 5, PAL.dogNose, { at: [0, -0.008, 0.182], scale: [0.03, 0.022, 0.02], smooth: true });
-  hb.sphere(0.008, 5, 3, 0xffffff, { at: [-0.008, 0.002, 0.198], scale: [1.2, 0.7, 0.5], ink: false, glow: 0xffffff });
+  hb.sphere(1, 8, 5, PAL.dogNose, { at: [0, -0.01, 0.18], scale: [0.025, 0.018, 0.017], smooth: true, ink: false });
+  hb.sphere(0.006, 5, 3, 0xffffff, { at: [-0.007, -0.002, 0.194], scale: [1.2, 0.7, 0.5], ink: false, glow: 0xffffff });
   hb.cyl(0.0035, 0.0035, 0.03, 5, PAL.eyeInk, { at: [0, -0.042, 0.176], rot: [0.3, 0, 0], ink: false });
   // Mouth interior (seen when the jaw opens).
   hb.sphere(1, 8, 4, PAL.mouthDark, { at: [0, -0.055, 0.1], scale: [0.05, 0.022, 0.07], smooth: true, ink: false });
@@ -326,18 +326,18 @@ function dogGeometry(coat: DogCoat, rest: THREE.Matrix4[]): THREE.BufferGeometry
       void z;
     };
     const lb = sb.blend(DB.base, legW);
-    const r0 = front ? 0.042 : 0.05;
+    const r0 = front ? 0.05 : 0.058;
     const leg = [
-      { y: up.y - D.upperL - D.lowerL + 0.01, w: 0.03, d: 0.032, x: up.x, z: up.z },
-      { y: lo.y - 0.04, w: 0.033, d: 0.034, x: up.x, z: up.z },
-      { y: lo.y, w: 0.036, d: 0.038, x: up.x, z: up.z - (front ? 0 : 0.01) },
+      { y: up.y - D.upperL - D.lowerL + 0.01, w: 0.036, d: 0.038, x: up.x, z: up.z },
+      { y: lo.y - 0.04, w: 0.039, d: 0.04, x: up.x, z: up.z },
+      { y: lo.y, w: 0.042, d: 0.044, x: up.x, z: up.z - (front ? 0 : 0.01) },
       { y: lo.y + 0.05, w: r0 * 0.95, d: r0, x: up.x, z: up.z },
       { y: up.y, w: r0 * 1.15, d: r0 * 1.2, x: up.x, z: up.z },
       { y: up.y + 0.07, w: r0 * 1.2, d: r0 * 1.3, x: up.x * 0.9, z: up.z },
     ];
     lb.add(ringTube(leg, 7), main, { smooth: true });
     const pb = sb.on(p);
-    pb.sphere(1, 7, 4, light, { at: [0, -D.pawY + 0.02, 0.018], scale: [0.036, 0.024, 0.048], smooth: true });
+    pb.sphere(1, 7, 4, light, { at: [0, -D.pawY + 0.02, 0.02], scale: [0.042, 0.026, 0.052], smooth: true });
   }
   return sb.build();
 }
@@ -352,7 +352,7 @@ const CH = [
   't0x', 't0y', 't1y', 't2y', 'wag',
   'aFLx', 'kFL', 'pFL', 'aFRx', 'kFR', 'pFR', 'aBLx', 'kBL', 'pBL', 'aBRx', 'kBR', 'pBR',
   'oBL', 'oBR', 'oFL', 'oFR',
-  'eyes', 'lid',
+  'eyes', 'lid', 'tz',
 ] as const;
 type DCh = (typeof CH)[number];
 export const DC = Object.fromEntries(CH.map((c, i) => [c, i])) as { readonly [K in DCh]: number };
@@ -372,7 +372,7 @@ const dreset = (p: DogPoseData) => p.v.set(DDEF);
 const dcopy = (o: DogPoseData, a: DogPoseData) => o.v.set(a.v);
 function dblend(o: DogPoseData, a: DogPoseData, b: DogPoseData, t: number): void {
   for (let i = 0; i < DN; i++) {
-    const d = i === DC.by ? wrapPi(b.v[i]! - a.v[i]!) : b.v[i]! - a.v[i]!;
+    const d = i === DC.by || i === DC.tz ? wrapPi(b.v[i]! - a.v[i]!) : b.v[i]! - a.v[i]!;
     o.v[i] = a.v[i]! + d * t;
   }
 }
@@ -603,6 +603,8 @@ interface DogCtx {
 
 const JUMP: Track = [0, 0, 0.25, 0, 0.45, 1, 0.65, 0.6, 0.8, 0, 1, 0];
 const POUNCE_Y: Track = [0, 0, 0.55, 0, 0.72, 1, 0.88, 0, 1, 0];
+const ZOOM_YAW: Track = [0, 0, 0.1, 0.3, 0.9, Math.PI * 4 - 0.3, 1, Math.PI * 4];
+const ROLL_Z: Track = [0, 0, 0.15, 0, 0.45, Math.PI, 0.55, Math.PI, 0.85, Math.PI * 2, 1, Math.PI * 2];
 
 export function dogActionPose(p: DogPoseData, a: DogAction, u: number, c: DogCtx): void {
   const at = c.at;
@@ -671,7 +673,7 @@ export function dogActionPose(p: DogPoseData, a: DogAction, u: number, c: DogCtx
     }
     case 'zoomies': {
       const w = c.looping ? 1 : envelope(u, 0.05, 0.08);
-      dset(p, DC.by, get(p, DC.by) + (c.looping ? (at / 1.8) * Math.PI * 4 : trk(u, [0, 0, 0.1, 0.3, 0.9, Math.PI * 4 - 0.3, 1, Math.PI * 4])));
+      dset(p, DC.by, get(p, DC.by) + (c.looping ? (at / 1.8) * Math.PI * 4 : trk(u, ZOOM_YAW)));
       const b = Math.abs(Math.sin(at * 12));
       dadd(p, DC.bty, 0.05 * b * w);
       dmt(p, DC.bz, -0.25, w);
@@ -740,8 +742,9 @@ export function dogActionPose(p: DogPoseData, a: DogAction, u: number, c: DogCtx
     case 'roll': {
       const w = envelope(u, 0.1, 0.1);
       const down = smooth01(u / 0.15) * (1 - smooth01((u - 0.85) / 0.15));
-      dmt(p, DC.bty, -0.2, down);
-      dset(p, DC.bz, get(p, DC.bz) + trk(u, [0, 0, 0.15, 0, 0.45, Math.PI, 0.55, Math.PI, 0.85, Math.PI * 2, 1, Math.PI * 2]));
+      dmt(p, DC.bty, -0.19, down);
+      // Roll about the body's long axis through its centre (not the feet).
+      dset(p, DC.tz, get(p, DC.tz) + trk(u, ROLL_Z));
       for (let leg = 0; leg < 4; leg++) legMix(p, leg, -0.6, 1.2 * (leg < 2 ? -1 : 1), 0.3, down);
       dmt(p, DC.jaw, 0.4, w);
       dmt(p, DC.tongue, 1, w);
@@ -1118,6 +1121,7 @@ export class DogRig implements Dog {
     base.rotation.set(v[DC.bx]!, v[DC.by]!, v[DC.bz]!, 'YXZ');
     const sq = Math.max(0.7, Math.min(1.3, v[DC.sq]!));
     base.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
+    bn[DB.torso]!.rotation.set(0, 0, v[DC.tz]!);
     bn[DB.rear]!.rotation.set(v[DC.rx]!, v[DC.ry]!, v[DC.rz]!);
     bn[DB.front]!.rotation.set(v[DC.fx]!, v[DC.fy]!, v[DC.fz]!);
     bn[DB.neck]!.rotation.set(v[DC.nx]!, v[DC.ny]! + this.lookYaw * 0.35, 0);
@@ -1132,7 +1136,10 @@ export class DogRig implements Dog {
     }
     // Legs.
     for (let leg = 0; leg < 4; leg++) {
-      const [u, l, p] = LEGS[leg]!;
+      const lb = LEGS[leg]!;
+      const u = lb[0];
+      const l = lb[1];
+      const p = lb[2];
       const b = DC.aFLx + leg * 3;
       const ab = leg === 0 ? DC.oFL : leg === 1 ? DC.oFR : leg === 2 ? DC.oBL : DC.oBR;
       const sd = leg === 0 || leg === 2 ? 1 : -1;

@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { PAL } from '../render/palette';
 import { GeoBuilder, shadeHex } from '../render/models/builder';
 import { basicMaterial, modelMaterial } from '../render/models/materials';
+import { isShared } from '../render/models/shared';
 import { Frame } from './kit';
 import { COUNTER_D, COUNTER_H, FURN, IN, OUT, TABLE_H, VANITY_H } from './layout';
 import type { Fixtures } from './types';
@@ -410,7 +411,7 @@ export function buildFixtures(): FixtureSet {
       for (const d of disposables) d.dispose();
       group.traverse((o) => {
         const m = o as THREE.Mesh;
-        if (m.isMesh && m.geometry && m.material === modelMaterial()) m.geometry.dispose();
+        if (m.isMesh && m.geometry && !isShared(m.geometry)) m.geometry.dispose();
       });
       group.removeFromParent();
     },

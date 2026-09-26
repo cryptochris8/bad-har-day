@@ -96,7 +96,10 @@ export class HairSim {
         this.restLen[i] = 0;
         continue;
       }
-      this.restLen[i] = Math.hypot(r[i * 3]! - r[p * 3]!, r[i * 3 + 1]! - r[p * 3 + 1]!, r[i * 3 + 2]! - r[p * 3 + 2]!);
+      const dx = r[i * 3]! - r[p * 3]!;
+      const dy = r[i * 3 + 1]! - r[p * 3 + 1]!;
+      const dz = r[i * 3 + 2]! - r[p * 3 + 2]!;
+      this.restLen[i] = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
   }
 
@@ -158,7 +161,7 @@ export class HairSim {
       let vx = (pos[o]! - prev[o]!) * keep;
       let vy = (pos[o + 1]! - prev[o + 1]!) * keep;
       let vz = (pos[o + 2]! - prev[o + 2]!) * keep;
-      const sp = Math.hypot(vx, vy, vz);
+      const sp = Math.sqrt(vx * vx + vy * vy + vz * vz);
       if (sp > maxS) {
         const k = maxS / sp;
         vx *= k;
@@ -188,7 +191,7 @@ export class HairSim {
       let dx = pos[o]! - pos[q]!;
       let dy = pos[o + 1]! - pos[q + 1]!;
       let dz = pos[o + 2]! - pos[q + 2]!;
-      const l = Math.hypot(dx, dy, dz);
+      const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
       const L = this.restLen[i]!;
       if (l > 1e-6) {
         const k = L / l;

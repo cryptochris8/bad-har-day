@@ -106,7 +106,7 @@ export function buildDoors(mat: THREE.Material, depth: THREE.Material, blockers:
     group,
     door: (id) => handles.get(id)!,
     update(dt) {
-      for (const f of tickers) f(dt);
+      for (let i = 0; i < tickers.length; i++) tickers[i]!(dt);
     },
     dispose() {
       for (const g of geos) g.dispose();
@@ -153,15 +153,15 @@ function beamGeometry(w: WallDef, o: Opening): THREE.BufferGeometry {
     pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     fade.push(fa, fb, fc, fa, fc, fd);
   };
-  const k = 0.32;
+  const k = 0.07;
   // shaft sides (double-sided material)
-  quad(top[0]!, top[1]!, bot[1]!, bot[0]!, k, k, 0.05, 0.05);
-  quad(top[3]!, top[2]!, bot[2]!, bot[3]!, k, k, 0.05, 0.05);
-  quad(top[0]!, top[3]!, bot[3]!, bot[0]!, k, k, 0.05, 0.05);
-  quad(top[1]!, top[2]!, bot[2]!, bot[1]!, k, k, 0.05, 0.05);
+  quad(top[0]!, top[1]!, bot[1]!, bot[0]!, k, k, 0.01, 0.01);
+  quad(top[3]!, top[2]!, bot[2]!, bot[3]!, k, k, 0.01, 0.01);
+  quad(top[0]!, top[3]!, bot[3]!, bot[0]!, k, k, 0.01, 0.01);
+  quad(top[1]!, top[2]!, bot[2]!, bot[1]!, k, k, 0.01, 0.01);
   // landing patch (window-shaped, warm)
   const lift = (p: [number, number, number]): [number, number, number] => [p[0], 0.015, p[2]];
-  quad(lift(bot[3]!), lift(bot[2]!), lift(bot[1]!), lift(bot[0]!), 0.55, 0.55, 0.55, 0.55);
+  quad(lift(bot[3]!), lift(bot[2]!), lift(bot[1]!), lift(bot[0]!), 0.2, 0.2, 0.2, 0.2);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('aFade', new THREE.Float32BufferAttribute(fade, 1));
@@ -280,7 +280,7 @@ export function buildCurtains(mat: THREE.Material, depth: THREE.Material): Curta
     group,
     curtains: (room) => handles.get(room)!,
     update(dt) {
-      for (const f of tickers) f(dt);
+      for (let i = 0; i < tickers.length; i++) tickers[i]!(dt);
     },
     setSun(k) {
       sun = Math.max(0, Math.min(1, k));

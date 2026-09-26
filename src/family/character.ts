@@ -456,8 +456,8 @@ export class HumanRig implements Character {
     if (!idle || dt <= 0) return;
     this.gestIn -= dt;
     if (this.gestIn > 0) return;
-    const [a, b] = gestureInterval(d.persona);
-    this.gestIn = a + this.rng.next() * (b - a);
+    const gi = gestureInterval(d.persona);
+    this.gestIn = gi[0] + this.rng.next() * (gi[1] - gi[0]);
     const list = PERSONA_GESTURES[d.persona];
     this.gesture = list[Math.floor(this.rng.next() * list.length) % list.length]!;
     this.gestT = 0;
@@ -686,7 +686,8 @@ export class HumanRig implements Character {
         const px = Math.max(-er * 0.2, Math.min(er * 0.2, this.lookYaw * er * 0.22));
         const py = Math.max(-er * 0.16, Math.min(er * 0.14, this.lookPitch * er * 0.3 + fs.pupilY * er * 0.12));
         ir.position.set(px, py, 0);
-        ir.scale.setScalar(Math.max(0.5, fs.pupil));
+        const ps = Math.max(0.5, fs.pupil);
+        ir.scale.set(ps, ps, 1);
       }
       const br = bn[o + F.brow]!;
       const rq = this.restQ[o + F.brow]!;

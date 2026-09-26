@@ -26,6 +26,14 @@ describe('control icons', () => {
     }
   });
 
+  it('every icon is inked in the house plum (never pure black)', () => {
+    for (const icon of ALL) {
+      const markup = controlIconSvg(icon);
+      expect(markup).toContain('#3a2330');
+      expect(markup).not.toMatch(/#000(000)?\b/);
+    }
+  });
+
   it('icons are distinct drawings', () => {
     const bodies = new Set(ALL.map((i) => controlIconSvg(i).replace(/class="[^"]*"/, '')));
     expect(bodies.size).toBe(ALL.length);

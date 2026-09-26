@@ -47,7 +47,7 @@ export class TrashBag extends BaseProp implements TrashBagProp {
     this.peek.visible = false;
     this.body.add(this.peek);
     this.addPart(propGeo('misc|bananaPeel', bananaPeelGeo), this.peek);
-    this.peek.scale.setScalar(0.8);
+    this.peek.scale.setScalar(0.95);
     // Bounds from the bag alone (the peel is hidden until setPeek).
     this.measureBagOnly();
     this.setGrip(0, 0.5, 0);
@@ -74,7 +74,7 @@ export class TrashBag extends BaseProp implements TrashBagProp {
     this.body.scale.set(1 + 0.05 * k, 1 - 0.02 * k, 1 + 0.05 * k);
     this.peek.visible = k > 0.02;
     // Slides from inside the neck up and over the knot, tipping outward.
-    this.peek.position.set(0.02 + 0.06 * k, 0.36 + 0.13 * k, 0.02 + 0.05 * k);
-    this.peek.rotation.set(0.9 * k, 0.4, -1.4 * k);
+    this.peek.position.set(0.02 + 0.07 * k, 0.36 + 0.12 * k, 0.02 + 0.08 * k);
+    this.peek.rotation.set(1.0 * k, 0.5, -1.3 * k);
   }
 }

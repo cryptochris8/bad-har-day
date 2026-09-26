@@ -106,6 +106,7 @@ export class FamilyScreen implements Screen {
   private tab = 0;
   private draft: FamilySetup;
   private nameInput: HTMLInputElement | null = null;
+  private nameTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly ctx: UiCtx) {
     this.el = screenEl('family', 'bhd-screen--dim');
@@ -174,6 +175,20 @@ export class FamilyScreen implements Screen {
 
   leave(): void {
     this.nameInput?.blur();
+    this.flushName();
+  }
+
+  /** Typing the dog's name emits after a short pause (the game rebuilds the family on every change). */
+  private scheduleNameCommit(): void {
+    if (this.nameTimer !== null) clearTimeout(this.nameTimer);
+    this.nameTimer = setTimeout(() => this.flushName(), 400);
+  }
+
+  private flushName(): void {
+    if (this.nameTimer === null) return;
+    clearTimeout(this.nameTimer);
+    this.nameTimer = null;
+    this.commit();
   }
 
   refresh(): void {
@@ -220,6 +235,7 @@ export class FamilyScreen implements Screen {
 
   private select(i: number): void {
     this.nameInput?.blur();
+    this.flushName();
     this.tab = Math.max(0, Math.min(TABS.length - 1, i));
     this.tabBtns.forEach((b, k) => {
       b.classList.toggle('is-on', k === this.tab);
@@ -268,11 +284,13 @@ export class FamilyScreen implements Screen {
         if (v !== input.value) input.value = v;
         if (v.trim().length > 0) {
           this.draft.looks.dog.name = sanitizeDogName(v);
-          this.commit();
+          setText(this.pvName, this.draft.looks.dog.name); // user string → textContent
+          this.scheduleNameCommit();
         }
       });
       const restore = (): void => {
         if (input.value.trim().length === 0) input.value = this.draft.looks.dog.name;
+        this.flushName();
       };
       input.addEventListener('blur', restore);
       input.addEventListener('keydown', (e) => {
@@ -287,6 +305,8 @@ export class FamilyScreen implements Screen {
         el('div', { class: 'bhd-fam__namebox' }, [input, shuffle]),
       ]);
       const doShuffle = (): void => {
+        if (this.nameTimer !== null) clearTimeout(this.nameTimer);
+        this.nameTimer = null;
         const n = nextDogName(this.draft.looks.dog.name);
         this.draft.looks.dog.name = n;
         input.value = n;

@@ -86,6 +86,16 @@ describe('time-of-day lighting keyframes', () => {
     expect(after.sunAmount).toBeGreaterThan(0.99);
   });
 
+  it('the house warms up at 6:00 when the lights come on, then daylight takes over', () => {
+    const quiet = lightingAt(330, 'clear').interiorWarm;
+    const lightsOn = lightingAt(362, 'clear').interiorWarm;
+    const morning = lightingAt(470, 'clear').interiorWarm;
+    expect(quiet).toBeGreaterThan(0.1);
+    expect(quiet).toBeLessThan(0.35);
+    expect(lightsOn).toBeGreaterThan(0.7);
+    expect(morning).toBeLessThan(0.05);
+  });
+
   it('weather greys the sky and softens the sun; drizzle rains', () => {
     const c = lightingAt(450, 'clear');
     const cl = lightingAt(450, 'cloudy');

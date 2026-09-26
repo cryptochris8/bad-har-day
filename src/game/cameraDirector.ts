@@ -51,7 +51,13 @@ export class CameraDirectorImpl implements CameraDirector {
   shot(goal: CameraGoal, stiffness = 3.5): void {
     this.mode = 'shot';
     this.rig.setGoal(goal, stiffness);
-    this.shotTarget = { x: goal.target.x, z: goal.target.z };
+    // Cut-away focus: a little in front of the target (toward the camera) — focusing ON a station's wall would
+    // lower the very wall being filmed.
+    const dx = goal.position.x - goal.target.x;
+    const dz = goal.position.z - goal.target.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const k = Math.min(0.9, len * 0.5) / len;
+    this.shotTarget = { x: goal.target.x + dx * k, z: goal.target.z + dz * k };
   }
 
   /** Jump straight to the current goal (act starts, teleports). */

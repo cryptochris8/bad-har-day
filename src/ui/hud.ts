@@ -46,6 +46,8 @@ interface MeterNode {
 
 export class Hud {
   readonly el: HTMLElement;
+  /** Top-left column (clock, tasks, objective) — measured for layout. */
+  readonly leftColumn: HTMLElement;
   private readonly clock: HTMLElement;
   private readonly hh: SVGGElement;
   private readonly mh: SVGGElement;
@@ -91,8 +93,9 @@ export class Hud {
     this.metersEl = el('div', { class: 'bhd-meters', attrs: { hidden: '' } });
     this.pauseBtn = el('button', { class: 'bhd-iconbtn bhd-pausebtn', html: uiIcon('pause'), attrs: { type: 'button', tabindex: '-1', 'aria-label': 'Pause', hidden: '', 'data-bhd-tap': '' } });
     onTap(this.pauseBtn, () => onPause());
+    this.leftColumn = el('div', { class: 'bhd-hud__tl' }, [this.clock, this.tasksEl, this.objEl]);
     this.el = el('div', { class: 'bhd-hud', attrs: { hidden: '' } }, [
-      el('div', { class: 'bhd-hud__tl' }, [this.clock, this.tasksEl, this.objEl]),
+      this.leftColumn,
       el('div', { class: 'bhd-hud__tr' }, [this.pauseBtn, this.metersEl]),
     ]);
   }

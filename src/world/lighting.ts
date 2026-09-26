@@ -49,6 +49,8 @@ export interface LightingState {
   neighbourWindows: number;
   /** Sunbeam strength through opened curtains (0..1). */
   sunbeam: number;
+  /** Warm cast on the house interior while lamps light a dark house (0..1): the 6:00 "lights on!" moment. */
+  interiorWarm: number;
   cloudColor: number;
   cloudAlpha: number;
   /** Rain streak amount 0..1. */
@@ -178,13 +180,13 @@ export function lightingAt(minutes: number, weather: Weather, out?: LightingStat
   o.keyColor = mixHex(PAL.keyNight, sunC, sunShare);
   o.keyIntensity = total;
   // Direction (toward the light): moon high from the south-west, sun from the south-east (shadows fall away from the camera).
-  const mx = -0.42;
-  const my = 0.82;
-  const mz = 0.39;
+  const mx = -0.22;
+  const my = 0.86;
+  const mz = 0.45;
   const sunLow = 1 - smooth01(365, 470, m); // the sun key starts lower and climbs
-  const sx = 0.5 + 0.12 * sunLow;
-  const sy = 0.74 - 0.14 * sunLow;
-  const sz = 0.45;
+  const sx = 0.1 + 0.14 * sunLow;
+  const sy = 0.82 - 0.12 * sunLow;
+  const sz = 0.55;
   let kx = mx + (sx - mx) * sunShare;
   let ky = my + (sy - my) * sunShare;
   let kz = mz + (sz - mz) * sunShare;
@@ -204,6 +206,7 @@ export function lightingAt(minutes: number, weather: Weather, out?: LightingStat
   o.windowGlow = Math.max(o.nightLamps * 0.75, o.houseLamps) * (1 - smooth01(380, 440, m) * 0.85);
   o.neighbourWindows = 0.28 * (1 - smooth01(355, 365, m)) + 0.62 * smooth01(355, 365, m) * (1 - smooth01(395, 425, m));
   o.sunbeam = smooth01(368, 392, m);
+  o.interiorWarm = clamp01((o.houseLamps * 0.85 + o.nightLamps * 0.25) * (1 - o.daylight));
   o.cloudAlpha = 0.55;
   o.rain = 0;
 

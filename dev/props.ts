@@ -196,8 +196,10 @@ function buildGrid(cat: string, origin: THREE.Vector3): { w: number; d: number }
   const rows = Math.ceil(list.length / cols);
   const w = cols * cell;
   const d = rows * cell;
-  list.forEach((e, i) => {
-    const p = e.make();
+  const built = list.map((e) => ({ e, p: e.make() }));
+  // Misc: tallest at the back so nothing hides behind the cereal box.
+  if (cat === 'misc') built.sort((a, b) => b.p.height - a.p.height);
+  built.forEach(({ e, p }, i) => {
     const c = i % cols;
     const r = Math.floor(i / cols);
     const bb = p.root.userData.bounds as THREE.Box3 | undefined;

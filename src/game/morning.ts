@@ -6,14 +6,14 @@ import { ACTIVITIES, SKIP_QUIPS } from '../activities/registry';
 import type { Activity, ActivityContext, ActivityHud, MorningState } from '../activities/types';
 import type { AudioEngine, MusicId } from '../audio/types';
 import { Rng, hashInts, hashString } from '../core/rng';
-import { GIRLS, type Family, type GirlId } from '../family/types';
+import { GIRLS, type Character, type Family, type GirlId } from '../family/types';
 import { NO_CONTROLS, type ControlScheme, type GameControls, type InputManager, type PointerInput } from '../input/types';
 import { ACTS, SCHOOL_DEADLINE, buildReport, type ActNumber, type ActivityId, type ActivityRecord, type ActivityResult, type ChoreId, type DayPlan, type MorningReport, type Stars } from '../plan';
 import { disposeTree } from '../render/models/common';
 import type { Fx, Projector } from '../render/types';
 import type { Settings } from '../storage/types';
 import type { ActCard, TaskItem, UiManager } from '../ui/types';
-import type { World } from '../world/types';
+import type { Anchor, World } from '../world/types';
 import type { CameraDirectorImpl } from './cameraDirector';
 import type { GameClockImpl } from './clock';
 import type { InteractionsImpl } from './interactions';
@@ -47,6 +47,64 @@ export interface MorningDeps {
 
 /** Mattress top height used to lay sleepers in bed (world beds). */
 export const MATTRESS_H = 0.5;
+
+/**
+ * Lay a character in bed. Bed anchors mark the sleeper's FEET (yaw = head toward local −Z = the headboard); the
+ * family's 'lie' pose centres the body on the root, so the root goes half a body-height toward the headboard.
+ */
+export function layInBed(c: Character, anchor: Anchor, side = 0): void {
+  const h = c.height / 2;
+  c.root.position.set(anchor.x - Math.sin(anchor.yaw) * h, anchor.y, anchor.z - Math.cos(anchor.yaw) * h);
+  c.root.rotation.y = anchor.yaw;
+  c.setPose('lie', { seatHeight: MATTRESS_H, side });
+}
+
+interface CarPose {
+  parent: THREE.Object3D | null;
+  pos: THREE.Vector3;
+  quat: THREE.Quaternion;
+}
+const carHome = new WeakMap<World, Record<'minivan' | 'ashley', CarPose>>();
+
+/**
+ * Put the world back to its morning state (doors, curtains, fixtures, cars) — a school run moves the minivan to the
+ * route and Ashley's car drives away. The cars' first-seen transforms are remembered per world.
+ */
+export function resetWorldState(world: World): void {
+  let home = carHome.get(world);
+  if (!home) {
+    const snap = (id: 'minivan' | 'ashley'): CarPose => {
+      const r = world.car(id).root;
+      return { parent: r.parent, pos: r.position.clone(), quat: r.quaternion.clone() };
+    };
+    home = { minivan: snap('minivan'), ashley: snap('ashley') };
+    carHome.set(world, home);
+  }
+  for (const id of ['minivan', 'ashley'] as const) {
+    const car = world.car(id);
+    const h = home[id];
+    if (h.parent && car.root.parent !== h.parent) h.parent.add(car.root);
+    car.root.position.copy(h.pos);
+    car.root.quaternion.copy(h.quat);
+    car.root.visible = true;
+    for (const d of [0, 1, 2, 3] as const) car.setDoor(d, 0);
+    car.setBrakeLights(false);
+    car.setHeadlights(false);
+  }
+  world.door('back').close();
+  world.door('front').close();
+  world.curtains('twins').close();
+  world.curtains('heidi').close();
+  const f = world.fixtures;
+  f.coffeeMaker.setBrewing(false);
+  f.sink.setWater(false);
+  f.dishwasher.setDoor(0);
+  f.dishwasher.setRacks(0);
+  f.kitchenTrash.setLid(0);
+  f.kitchenTrash.setBag(true);
+  f.outdoorBin.setLid(0);
+  f.fridge.setDoor(0);
+}
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'] as const;
 const MOODS: Record<ActNumber, ActCard['mood']> = { 1: 'predawn', 2: 'sunrise', 3: 'morning', 4: 'bright', 5: 'bright' };
@@ -108,6 +166,8 @@ export class Morning {
   private disposed = false;
   private inGirlRoom: string | null = null;
   private readonly ui: UiManager;
+  /** Objects that outlive an activity (ctx.persist); removed when the morning is disposed. */
+  private readonly persist = new THREE.Group();
   /** Dev/e2e: plays the whole morning by itself (starts chores, skips each activity after a moment). */
   autopilot = false;
   private readonly choreStarters = new Map<ChoreId, () => void>();
@@ -125,6 +185,8 @@ export class Morning {
         this.modal = Math.max(0, this.modal - 1);
       });
     };
+    this.persist.name = 'morning-persist';
+    d.scene.add(this.persist);
     // Explicit delegation (never prototype tricks: the UI may be a class with private fields).
     this.ui = {
       showScreen: (id, data) => base.showScreen(id, data),
@@ -259,6 +321,7 @@ export class Morning {
     if (c) this.cleanupActivity(c);
     this.d.interactions.clear();
     this.d.npcs.clear();
+    disposeTree(this.persist);
     this.timers.length = 0;
     this.waiters.length = 0;
   }
@@ -419,16 +482,15 @@ export class Morning {
   /** 5:15 AM: everybody else is asleep. */
   setupScene(): void {
     const { world, family, npcs, walker, clock, camera } = this.d;
+    resetWorldState(world);
     world.setWeather(this.plan.weather);
     world.setClock(clock.minutes);
     for (const id of ['ashley', 'addy', 'ellie', 'heidi'] as const) {
       const c = family.member(id);
       const anchor = world.anchor(id === 'ashley' ? 'masterBedAshley' : id === 'addy' ? 'bedAddy' : id === 'ellie' ? 'bedEllie' : 'bedHeidi');
       npcs.release(c);
-      c.root.position.set(anchor.x, anchor.y, anchor.z);
-      c.root.rotation.y = anchor.yaw;
       c.setOutfit('sleep');
-      c.setPose('lie', { seatHeight: MATTRESS_H, side: id === 'heidi' ? 1 : id === 'ellie' ? -0.6 : 0.4 });
+      layInBed(c, anchor, id === 'heidi' ? 1 : id === 'ellie' ? -0.6 : 0.4);
       c.setExpression('asleep');
       c.emote('zzz');
       c.hair?.setBedhead(1);
@@ -547,6 +609,7 @@ export class Morning {
     return {
       scene: d.scene,
       root,
+      persist: this.persist,
       world: d.world,
       family: d.family,
       fx: d.fx,

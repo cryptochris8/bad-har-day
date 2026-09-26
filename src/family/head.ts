@@ -46,7 +46,7 @@ export function buildHead(sb: SkinBuilder, s: BodySpec, st: HeadStyle): void {
   const low = st.low;
   const hb = sb.on(B.head);
   // Skull: one clean, soft ellipsoid (cleanest cartoon read).
-  hb.sphere(1, low ? 12 : 16, low ? 9 : 11, skin, { at: C, scale: [s.headRx, s.headRy, s.headRz], smooth: true });
+  hb.sphere(1, low ? 12 : 15, low ? 9 : 10, skin, { at: C, scale: [s.headRx, s.headRy, s.headRz], smooth: true });
   // Neck (bottom hidden in the collar).
   const neckR = s.headRx * (s.kid ? 0.3 : 0.32);
   const neckTop = s.headCY * 0.55;
@@ -61,10 +61,14 @@ export function buildHead(sb: SkinBuilder, s: BodySpec, st: HeadStyle): void {
       hb.sphere(s.headRx * 0.11, 5, 3, shadeHex(skin, 0.82), { at: [p.pos[0] + sd * s.headRx * 0.07, p.pos[1], p.pos[2] + 0.004], scale: [0.35, 1, 0.7], ink: false, smooth: true });
     }
   }
-  // Button nose (a little rosy).
+  // Button nose (a little rosy). Un-inked: small features get heavy halos from the hull; a darker
+  // underside gives it shape instead.
   const np = headSurface(s, 0, s.nosePitch, -s.headRz * 0.02);
   const nr = s.headRx * (s.kid ? 0.105 : 0.12);
-  hb.sphere(nr, 8, 6, mixHex(shadeHex(skin, 0.95), PAL.blush, 0.12), { at: np.pos, rot: eul(np.quat), scale: [1.15, 0.9, 0.9], smooth: true });
+  const nq = eul(np.quat);
+  hb.sphere(nr, 8, 6, mixHex(shadeHex(skin, 0.97), PAL.blush, 0.16), { at: np.pos, rot: nq, scale: [1.15, 0.9, 0.9], smooth: true, ink: false });
+  const nd = headSurface(s, 0, s.nosePitch - 0.05, -s.headRz * 0.035);
+  hb.sphere(nr * 0.95, 8, 4, mixHex(shadeHex(skin, 0.78), PAL.blush, 0.2), { at: nd.pos, rot: nq, scale: [1.1, 0.7, 0.8], smooth: true, ink: false });
 
   if (st.beard !== 'none') beard(sb, s, st);
   if (st.glasses !== null) glasses(sb, s, st.glasses);
@@ -81,7 +85,6 @@ function eyeParts(sb: SkinBuilder, s: BodySpec, st: HeadStyle, sd: 1 | -1): void
   const er = s.eyeR;
   const ex = er * EYE_SCALE[0];
   const ey = er * EYE_SCALE[1];
-  void EYE_SCALE[2];
   const low = st.low;
   const ink = PAL.eyeInk;
   // Open eye: white lens (front half-ellipsoid) + crisp ink rim.
@@ -91,7 +94,7 @@ function eyeParts(sb: SkinBuilder, s: BodySpec, st: HeadStyle, sd: 1 | -1): void
     scale: [EYE_SCALE[0], EYE_SCALE[2], EYE_SCALE[1]],
     smooth: true,
   });
-  eo.torus(er, er * 0.07, 3, low ? 10 : 12, ink, { scale: [EYE_SCALE[0] * 1.03, EYE_SCALE[1] * 1.03, 1] });
+  eo.torus(er, er * 0.07, 3, 10, ink, { scale: [EYE_SCALE[0] * 1.03, EYE_SCALE[1] * 1.03, 1] });
   // Thicker upper-rim lash line (friendly, less "googly").
   eo.torus(er, er * 0.105, 3, low ? 7 : 9, ink, { at: [0, 0, -er * 0.01], rot: [0, 0, 0.16], scale: [EYE_SCALE[0] * 1.05, EYE_SCALE[1] * 1.04, 1] }, Math.PI - 0.32);
   // Iris + pupil + glints (moves for look direction, scales for pupil size).
@@ -126,14 +129,15 @@ function eyeParts(sb: SkinBuilder, s: BodySpec, st: HeadStyle, sd: 1 | -1): void
   for (const e of [-1, 1]) la.sphere(er * 0.1, 5, 3, ink, { at: [e * lidRx * 1.02, 0, 0], scale: [1, 0.75, 1] });
   if (st.lashes) {
     const outer = sd; // outer corner is +x for the left eye (sd = +1)
-    for (const [k, len, up] of [
-      [0, 0.52, 0.55],
-      [0.22, 0.42, 0.95],
+    for (const [t0, len] of [
+      [0.28, 0.46],
+      [0.62, 0.38],
     ] as const) {
-      const base: V3 = [outer * lidRx * (1.0 - k * 0.25), er * k * 0.3, lidRz * (0.1 + k * 0.5)];
-      const d = new THREE.Vector3(outer * 1, up, 0.35).normalize();
+      const t = outer > 0 ? t0 : Math.PI - t0;
+      const base: V3 = [Math.cos(t) * ex * 1.06, Math.sin(t) * ey * 1.05, er * 0.02];
+      const d = new THREE.Vector3(Math.cos(t) + outer * 0.9, Math.sin(t) + 0.5, 0.25).normalize();
       const L = er * len;
-      la.cone(er * 0.07, L, 4, ink, { at: [base[0] + (d.x * L) / 2, base[1] + (d.y * L) / 2, base[2] + (d.z * L) / 2], rot: alignY(d), ink: false });
+      eo.cone(er * 0.07, L, 3, ink, { at: [base[0] + (d.x * L) / 2, base[1] + (d.y * L) / 2, base[2] + (d.z * L) / 2], rot: alignY(d), ink: false });
     }
   }
   // Joy eyes ^^ (upward arcs).
@@ -150,7 +154,7 @@ function eyeParts(sb: SkinBuilder, s: BodySpec, st: HeadStyle, sd: 1 | -1): void
     for (const k of [0, 1]) {
       const d = new THREE.Vector3(sd * (0.9 - k * 0.35), -0.55 - k * 0.3, 0.2).normalize();
       const L = er * 0.32;
-      cl.cone(er * 0.06, L, 4, ink, { at: [ox - sd * k * er * 0.18 + (d.x * L) / 2, er * 0.1 - k * er * 0.12 + (d.y * L) / 2, er * 0.28], rot: alignY(d), ink: false });
+      cl.cone(er * 0.06, L, 3, ink, { at: [ox - sd * k * er * 0.18 + (d.x * L) / 2, er * 0.1 - k * er * 0.12 + (d.y * L) / 2, er * 0.28], rot: alignY(d), ink: false });
     }
   }
   // Squeeze > < (chevrons pointing toward the nose).
@@ -194,13 +198,13 @@ function mouth(sb: SkinBuilder, s: BodySpec, kind: MouthKind): void {
   const bend = (v: THREE.Vector3) => {
     v.z -= (v.x * v.x) / (2 * Rh);
   };
-  const b = sb.on(mouthBone(kind), kind === 'eek', bend);
+  const b = sb.on(mouthBone(kind), false, bend);
   const w = s.headRx * (s.kid ? 0.2 : 0.19);
   const lt = w * 0.13;
   const lip = PAL.lipLine;
-  const cap = (x: number, y: number, r = lt) => b.sphere(r, 5, 3, lip, { at: [x, y, 0], ink: false });
+  const cap = (x: number, y: number, r = lt) => b.sphere(r, 4, 3, lip, { at: [x, y, 0], ink: false });
   const arcLine = (R: number, arcLen: number, centre: number, at: V3, t = lt) => {
-    b.torus(R, t, 3, 10, lip, { at, rot: [0, 0, centre - arcLen / 2], ink: false }, arcLen);
+    b.torus(R, t, 3, 8, lip, { at, rot: [0, 0, centre - arcLen / 2], ink: false }, arcLen);
     const a0 = centre - arcLen / 2;
     const a1 = centre + arcLen / 2;
     cap(at[0] + Math.cos(a0) * R, at[1] + Math.sin(a0) * R, t);
@@ -222,7 +226,7 @@ function mouth(sb: SkinBuilder, s: BodySpec, kind: MouthKind): void {
         const t = i / 12;
         pts.push(new THREE.Vector3((t - 0.5) * w * 1.7, Math.sin(t * Math.PI * 3) * w * 0.16, 0));
       }
-      b.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, lt, 3, false), lip, { ink: false });
+      b.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, lt, 3, false), lip, { ink: false });
       cap(-w * 0.85, 0);
       cap(w * 0.85, 0);
       break;
@@ -253,29 +257,29 @@ function mouth(sb: SkinBuilder, s: BodySpec, kind: MouthKind): void {
       }
       tp.reverse();
       b.extrude(tp, Rh * 0.012, PAL.teeth, { at: [0, 0, Rh * 0.012], ink: false });
-      b.sphere(w * 0.46, 7, 4, PAL.tongue, { at: [0, top - h * 0.7, Rh * 0.008], scale: [1.15, 0.6, 0.2], ink: false });
+      b.sphere(w * 0.46, 6, 3, PAL.tongue, { at: [0, top - h * 0.7, Rh * 0.008], scale: [1.15, 0.6, 0.2], ink: false });
       break;
     }
     case 'open':
     case 'yawn':
     case 'o': {
-      const rx = kind === 'open' ? w * 0.52 : kind === 'yawn' ? w * 0.6 : w * 0.3;
-      const ry = kind === 'open' ? w * 0.6 : kind === 'yawn' ? w * 0.95 : w * 0.36;
+      const rx = kind === 'open' ? w * 0.52 : kind === 'yawn' ? w * 0.66 : w * 0.3;
+      const ry = kind === 'open' ? w * 0.6 : kind === 'yawn' ? w * 1.08 : w * 0.36;
       const cy = kind === 'yawn' ? -w * 0.35 : kind === 'open' ? -w * 0.12 : -w * 0.05;
       const pts: [number, number][] = [];
-      const n = kind === 'o' ? 10 : 12;
+      const n = kind === 'o' ? 8 : 10;
       for (let i = 0; i < n; i++) {
         const t = (i / n) * Math.PI * 2;
         pts.push([Math.cos(t) * rx, cy + Math.sin(t) * ry]);
       }
       b.extrude(pts, Rh * 0.03, PAL.mouthDark, {});
-      if (kind !== 'o') b.sphere(rx * 0.62, 7, 4, PAL.tongue, { at: [0, cy - ry * 0.52, Rh * 0.01], scale: [1.1, 0.55, 0.2], ink: false });
+      if (kind !== 'o') b.sphere(rx * 0.62, 6, 3, PAL.tongue, { at: [0, cy - ry * 0.52, Rh * 0.01], scale: [1.1, 0.55, 0.2], ink: false });
       if (kind === 'yawn') b.sphere(rx * 0.55, 6, 3, PAL.teeth, { at: [0, cy + ry * 0.86, Rh * 0.012], scale: [1.2, 0.22, 0.2], ink: false });
       break;
     }
     case 'pout': {
       const pc = mixHex(PAL.tongue, PAL.lipLine, 0.45);
-      b.torus(w * 0.24, w * 0.12, 4, 10, pc, { at: [0, -w * 0.05, w * 0.03], scale: [1, 0.72, 1], ink: false });
+      b.torus(w * 0.24, w * 0.12, 3, 9, pc, { at: [0, -w * 0.05, w * 0.03], scale: [1, 0.72, 1], ink: false });
       b.sphere(w * 0.1, 5, 3, PAL.mouthDark, { at: [0, -w * 0.05, w * 0.05], scale: [1, 0.6, 0.4], ink: false });
       break;
     }
@@ -294,9 +298,11 @@ function mouth(sb: SkinBuilder, s: BodySpec, kind: MouthKind): void {
         pts.push([x, hh + lift(x)]);
       }
       b.extrude(pts, Rh * 0.03, PAL.teeth, {});
+      const rim = pts.map(([x, y]) => new THREE.Vector3(x, y, Rh * 0.016));
+      b.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim, true), 10, lt * 0.8, 3, true), lip, {});
       b.box(hw * 1.8, lt * 0.55, lt * 0.5, lip, { at: [0, w * 0.06, Rh * 0.016], ink: false });
-      for (let i = 0; i < 3; i++) {
-        const x = (-0.5 + (i + 1) / 4) * hw * 1.9;
+      for (let i = 0; i < 2; i++) {
+        const x = (-0.5 + (i + 1) / 3) * hw * 1.9;
         b.box(lt * 0.5, hh * 1.7, lt * 0.5, lip, { at: [x, lift(x) * 0.8, Rh * 0.016], ink: false });
       }
       break;
@@ -369,7 +375,7 @@ function glasses(sb: SkinBuilder, s: BodySpec, frame: number): void {
   const tube = er * 0.1;
   for (const sd of [-1, 1] as const) {
     const p = headSurface(s, sd * s.eyeYaw, s.eyePitch, er * 0.62);
-    b.torus(rimR, tube, 3, 14, frame, { at: p.pos, rot: eul(p.quat), scale: [0.95, 0.9, 1], smooth: true });
+    b.torus(rimR, tube * 1.25, 3, 14, frame, { at: p.pos, rot: eul(p.quat), scale: [0.95, 0.9, 1], smooth: true, ink: false });
     // Temple arm to the ear.
     const a0 = headSurface(s, sd * (s.eyeYaw + 0.42), s.eyePitch + 0.03, er * 0.3);
     const a1 = headSurface(s, sd * 1.45, s.eyePitch + 0.04, s.headRx * 0.02);

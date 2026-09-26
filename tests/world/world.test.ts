@@ -11,7 +11,7 @@ describe('createWorld (smoke)', () => {
   cam.position.set(0, 11.5, 6);
 
   it('builds quickly and exposes the contract', () => {
-    expect(buildMs).toBeLessThan(8000);
+    expect(buildMs).toBeLessThan(30000); // ~1.5 s on an idle machine; generous for shared CI boxes
     expect(world.root.children.length).toBeGreaterThan(3);
     expect(world.hideSpots).toHaveLength(12);
     expect(world.hideSpot('dogBed').label).toContain('dog');

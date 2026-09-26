@@ -7,8 +7,11 @@
 //   brush=u,v (a brush in contact)  press=0..1  dv=… du=… brushKind=black|purple|pink|teal
 //   sway=1 (animated head motion)  three=1 (three girls on stools)  brushes=1 (the four brushes, black glowing)
 //   yaw=deg (girl yaw override)  dist=m (dollhouse distance override)  flip=1 (hair flip loop)
+//   fam=1 (use the real family girls from src/family instead of the mannequin)  nobrush=1 (hide the brush mesh)
+//   cam=x,y,z&look=x,y,z&fov=… (explicit framing)
 // Drag on the hair to brush it (downward strokes clear tangles, work from the ends up); drag elsewhere to orbit.
 // Keys: M markers · B bedhead · R re-roll tangles · F hair flip · 1-4 brush kind
+// window.__DEV__: rigs, camera, pattern(name, scale), stroke(u, v0, v1, steps?, release?) → { before, after }
 import * as THREE from 'three';
 import { Rng } from '../src/core/rng';
 import { brushPoseOnHair, createBrush, createGirlHair, fieldMean, sweepCells } from '../src/hair';
@@ -502,7 +505,7 @@ h.onUpdate((dt, t) => {
     brushPoseOnHair(bg.hair, u, v, bpos, bq);
     handBrush.root.position.copy(bpos);
     handBrush.root.quaternion.copy(bq);
-    handBrush.root.visible = true;
+    handBrush.root.visible = P.get('nobrush') !== '1';
   } else handBrush.root.visible = false;
   const g0 = girls[0];
   if (g0) {
@@ -518,8 +521,31 @@ h.onUpdate((dt, t) => {
 });
 
 const d = (window.__DEV__ ??= {});
+const tmpV = new THREE.Vector3();
+/** Scripted drag on girl 0 through real pointer events (raycast → uv → sweep): u, v0 → v1. */
+async function stroke(u: number, v0: number, v1: number, steps = 14, release = true, ms = 35): Promise<{ before: number[]; after: number[] }> {
+  const g = girls[0]!;
+  const canvas = h.renderer.canvas;
+  const rect = canvas.getBoundingClientRect();
+  const toScreen = (uu: number, vv: number) => {
+    g.hair.surfacePoint(uu, vv, tmpV).project(h.camera);
+    return { x: rect.left + ((tmpV.x + 1) / 2) * rect.width, y: rect.top + ((1 - tmpV.y) / 2) * rect.height };
+  };
+  const before = Array.from(g.hair.tangle);
+  let p = toScreen(u, v0);
+  canvas.dispatchEvent(new PointerEvent('pointerdown', { clientX: p.x, clientY: p.y, bubbles: true, cancelable: true }));
+  for (let i = 1; i <= steps; i++) {
+    await new Promise((r) => setTimeout(r, ms));
+    p = toScreen(u, v0 + ((v1 - v0) * i) / steps);
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: p.x, clientY: p.y }));
+  }
+  if (release) window.dispatchEvent(new PointerEvent('pointerup', {}));
+  return { before, after: Array.from(g.hair.tangle) };
+}
 Object.assign(d, {
   rigs: girls.map((g) => g.hair),
+  camera: h.camera,
+  stroke,
   pattern: (name: string, s = 1) => girls.forEach((g, i) => applyPattern(g.hair, name, s, seed + i)),
 });
 h.start();

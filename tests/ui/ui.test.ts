@@ -257,6 +257,28 @@ describe('settings', () => {
     expect(ui.debug.settings.touchHand).toBe('left');
   });
 
+  it('reduced motion (setting or #app class) flags the layer', () => {
+    const { ui, root, data } = setup();
+    expect(ui.layer.dataset.motion).toBe('full');
+    ui.showScreen('settings', { ...data, settings: { ...DEFAULT_SETTINGS, reducedMotion: true } });
+    expect(ui.layer.dataset.motion).toBe('reduced');
+    ui.showScreen('settings', data);
+    expect(ui.layer.dataset.motion).toBe('full');
+    root.classList.add('bhd-reduced-motion');
+    expect(ui.reducedMotion()).toBe(true);
+  });
+
+  it('leaving the game for the menu clears transient bubbles and banners', () => {
+    const { ui, data } = setup();
+    ui.showScreen('none', data);
+    ui.bubble({ x: 0, y: 0, z: 0 }, 'hi', { seconds: 30 });
+    ui.banner('COFFEE: SECURED', 'secured');
+    ui.showScreen('menu', data);
+    expect(ui.debug.bubbles).toBe(0);
+    expect(ui.debug.banner).toBeNull();
+    expect(ui.layer.dataset.mode).toBe('menu');
+  });
+
   it('reset stats is two-step', () => {
     const { ui, act, cmds, data } = setup();
     ui.showScreen('settings', data);
@@ -308,7 +330,7 @@ describe('family setup', () => {
   });
 
   it("the dog's name is always text (never markup)", () => {
-    const { ui, act, data, root } = setup();
+    const { ui, act, data, root, cmds } = setup();
     const evil = '<img src=x onerror=alert(1)>';
     ui.showScreen('family', { ...data, family: family(evil) });
     for (let i = 0; i < 5; i++) act('next'); // DOG tab
@@ -319,8 +341,13 @@ describe('family setup', () => {
     const input = ui.screenEl('family').querySelector<HTMLInputElement>('.bhd-input')!;
     expect(input.maxLength).toBe(14);
     // Typing into the field emits the sanitised name.
+    const before = cmds.length;
     input.value = 'Waffles<b>';
     input.dispatchEvent(new Event('input'));
+    expect(name.textContent).toBe('Waffles<b>'); // preview updates at once…
+    expect(cmds.length).toBe(before); // …the command waits for a pause / blur
+    input.dispatchEvent(new Event('blur'));
+    expect(cmds.length).toBe(before + 1);
     expect(ui.debug.family.looks.dog.name).toBe('Waffles<b>');
     expect(root.querySelector('b')).toBeNull();
     // Speech bubbles tag the dog with its (text) name.

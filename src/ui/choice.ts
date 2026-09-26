@@ -93,8 +93,8 @@ export class ChoiceView {
   handle(a: MenuAction): boolean {
     if (!this.resolve) return false;
     if (a === 'confirm') {
-      const r = this.focus.handle('confirm');
-      return r !== 'none' || true;
+      this.focus.handle('confirm');
+      return true;
     }
     if (a === 'up' || a === 'down' || a === 'left' || a === 'right' || a === 'next' || a === 'prev') {
       if (this.focus.handle(a) === 'moved') this.sound('move');

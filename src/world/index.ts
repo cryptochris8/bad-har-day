@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
 import { GeoBuilder } from '../render/models/builder';
-import { modelMaterial, sceneryMaterial } from '../render/models/materials';
+import { instanceMaterial, modelMaterial, sceneryMaterial } from '../render/models/materials';
 import type { Vec3Like } from '../render/types';
 import { buildBeds } from './beds';
 import { buildAshleyCar, buildMinivan } from './cars';
@@ -28,6 +28,7 @@ import { buildCurtains, buildDoors } from './openings';
 import { buildPhysics, navPathOn } from './physics';
 import { Rain } from './rain';
 import { Sky } from './sky';
+import { splitGeometry } from './split';
 import { furnitureProxies, outdoorProxies, proxyMesh } from './shadows';
 import type { CarHandle, HideSpot, HideSpotId, RoomId, World } from './types';
 
@@ -65,9 +66,12 @@ export function createWorld(opts: { quality: 'high' | 'low' }): World {
   };
 
   const physics = buildPhysics();
-  const wallMat = cutToonMaterial(cutU, 'walls');
+  // one tintable material for the house interior (warm "lights on!" cast at dawn)
+  const interior = instanceMaterial();
+  const interiorTint = interior.uniforms.uTint;
+  const wallMat = cutToonMaterial(cutU, 'walls', interiorTint);
   const depthMat = cutDepthMaterial(cutU);
-  const disposables: { dispose(): void }[] = [wallMat, depthMat];
+  const disposables: { dispose(): void }[] = [wallMat, depthMat, interior.material];
 
   // ── builders ──
   const wallB = new GeoBuilder(true, true);
@@ -104,11 +108,14 @@ export function createWorld(opts: { quality: 'high' | 'low' }): World {
   const exterior = buildExterior(quality, wallB, glows, proxyB);
   root.add(exterior.group);
 
-  const wallGeo = buildWithSeg(wallB);
-  disposables.push(wallGeo);
-  const walls = cutMesh(wallGeo, wallMat, depthMat, { cast: false });
-  walls.name = 'walls';
-  houseGroup.add(walls);
+  const wallGeoAll = buildWithSeg(wallB);
+  splitGeometry(wallGeoAll, 4, (x, _y, z) => (x < 0 ? 0 : 1) + (z < -1.4 ? 0 : 2)).forEach((g, i) => {
+    disposables.push(g);
+    const walls = cutMesh(g, wallMat, depthMat, { cast: false });
+    walls.name = 'walls' + i;
+    houseGroup.add(walls);
+  });
+  wallGeoAll.dispose();
   const wallShadowGeo = buildWithSeg(wallShadowB);
   const proxyGeo = proxyB.build();
   disposables.push(wallShadowGeo, proxyGeo);
@@ -137,6 +144,12 @@ export function createWorld(opts: { quality: 'high' | 'low' }): World {
   const curtains = buildCurtains(wallMat, depthMat);
   houseGroup.add(curtains.group);
 
+  // interior meshes share the tintable material (furniture, floors, fixtures, beds)
+  const shared = [modelMaterial(), sceneryMaterial()];
+  houseGroup.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && shared.includes(m.material as THREE.MeshToonMaterial)) m.material = interior.material;
+  });
   const lamps = buildLampSystem(glows, cutU, quality);
   root.add(lamps.group);
   const sky = new Sky(quality);
@@ -156,9 +169,9 @@ export function createWorld(opts: { quality: 'high' | 'low' }): World {
   };
   park(minivan.handle, CAR_PARK.minivan);
   park(ashleyCar.handle, CAR_PARK.ashley);
-  const carColliders: [CarHandle, (typeof physics.cars)['minivan'], number, number][] = [
-    [minivan.handle, physics.cars.minivan, CAR_PARK.minivan.w, CAR_PARK.minivan.l],
-    [ashleyCar.handle, physics.cars.ashley, CAR_PARK.ashley.w, CAR_PARK.ashley.l],
+  const carColliders: { car: CarHandle; rc: (typeof physics.cars)['minivan']; w: number; l: number }[] = [
+    { car: minivan.handle, rc: physics.cars.minivan, w: CAR_PARK.minivan.w, l: CAR_PARK.minivan.l },
+    { car: ashleyCar.handle, rc: physics.cars.ashley, w: CAR_PARK.ashley.w, l: CAR_PARK.ashley.l },
   ];
 
   // ── time of day ──
@@ -182,6 +195,8 @@ export function createWorld(opts: { quality: 'high' | 'low' }): World {
     fixtures.setClock(clock);
     fixtures.setDaylight(state.daylight);
     rain.setAmount(state.rain);
+    const k = state.interiorWarm;
+    interiorTint.value.setRGB(1 + 0.2 * k, 1 + 0.05 * k, 1 - 0.14 * k);
   };
   const tmpColor = new THREE.Color();
   applyLighting();
@@ -278,7 +293,12 @@ export function createWorld(opts: { quality: 'high' | 'low' }): World {
       curtains.update(d);
       markers.update(d);
       rain.update(d, view.fx, view.fz);
-      for (const [car, rc, w, l] of carColliders) {
+      for (let ci = 0; ci < carColliders.length; ci++) {
+        const cc = carColliders[ci]!;
+        const rc = cc.rc;
+        const w = cc.w;
+        const l = cc.l;
+        const car = cc.car;
         const p = car.root.position;
         const along = Math.abs(Math.cos(car.root.rotation.y)) > 0.7;
         const hx = (along ? w : l) / 2;

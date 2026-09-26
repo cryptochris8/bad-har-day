@@ -659,7 +659,8 @@ export function buildLayout(opts: LayoutOpts): HairLayout {
         const th = lerp(b.th0, b.th1, f);
         const a = [0, 0, 0];
         const c = [0, 0, 0];
-        headPoint(fit, phi, th, CAP_OFF_TOP * lerp(1, 0.45, f) + 0.009 + 0.006 * Math.sin(Math.PI * f), a);
+        // Root tucked into the cap (no shards at the part), then lying over the forehead.
+        headPoint(fit, phi, th, j === 0 ? CAP_OFF_TOP * 0.55 : CAP_OFF_TOP * lerp(1, 0.45, f) + 0.009 + 0.006 * Math.sin(Math.PI * f), a);
         headPoint(fit, phi - 0.08 * f, th * (1 + 0.15 * f), CAP_OFF_TOP + 0.02 + 0.03 * Math.sin(Math.PI * f) + 0.02 * f, c);
         rest0.push(...a);
         rest1.push(...c);
@@ -678,7 +679,7 @@ export function buildLayout(opts: LayoutOpts): HairLayout {
           ink: 0.5,
           rnd: r01(seed, 41, k),
           shadeK: 1,
-          width: (v) => b.w * (0.75 + 0.25 * sstep(0, 0.3, v)) * (1 - 0.6 * sstep(0.45, 1, v)),
+          width: (v) => b.w * (0.45 + 0.55 * sstep(0, 0.3, v)) * (1 - 0.6 * sstep(0.45, 1, v)),
           depth: (v) => 0.0095 * (1 - 0.4 * v),
           widthBed: 0.25,
           depthBed: 0.5,

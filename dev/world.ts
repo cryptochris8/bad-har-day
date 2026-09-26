@@ -22,7 +22,7 @@ const w = params.get('weather');
 if (w === 'cloudy' || w === 'drizzle') world.setWeather(w);
 
 // ── framing ──
-type Shot = { pos: [number, number, number]; look: [number, number, number]; fov: number };
+type Shot = { pos: [number, number, number]; look: [number, number, number]; fov: number; focus?: [number, number] };
 const CLOSEUPS: Record<string, Shot> = {
   coffeeMaker: { pos: [5.5, 1.78, -4.45], look: [5.4, 1.1, -6.15], fov: 42 },
   sink: { pos: [6.75, 1.95, -4.3], look: [6.7, 0.85, -6.05], fov: 44 },
@@ -30,9 +30,11 @@ const CLOSEUPS: Record<string, Shot> = {
   vanity: { pos: [0.9, 1.48, -3.45], look: [0.9, 1.3, -6.3], fov: 50 },
   bedAddy: { pos: [-3.7, 2.3, -2.7], look: [-4.6, 0.55, -5.3], fov: 46 },
   bedHeidi: { pos: [-7.1, 2.3, -2.7], look: [-8.1, 0.55, -5.3], fov: 46 },
-  backDoor: { pos: [7.0, 2.3, -1.6], look: [9.2, 0.9, -4.8], fov: 50 },
+  backDoor: { pos: [6.4, 2.1, -2.0], look: [9.0, 1.05, -4.6], fov: 50, focus: [8.3, -4.57] },
   yard: { pos: [14.5, 6.2, 2.5], look: [15.0, 0.4, -7.5], fov: 50 },
   driveway: { pos: [-10.5, 4.2, 11.5], look: [-13.6, 0.8, 2.8], fov: 46 },
+  van: { pos: [-8.2, 2.4, -2.6], look: [-12.6, 0.9, 2.4], fov: 46, focus: [-12.3, 2.2] },
+  vanBack: { pos: [-9.0, 2.6, 8.8], look: [-12.8, 0.9, 2.6], fov: 46, focus: [-12.3, 2.2] },
 };
 const viewParam = params.get('view') ?? 'dollhouse';
 let focus: [number, number] = [ANCHORS.chrisStart.x, ANCHORS.chrisStart.z];
@@ -50,10 +52,16 @@ if (fp) {
   }
 }
 const DEG = Math.PI / 180;
-if (viewParam.startsWith('closeup:')) {
+if (params.has('cam')) {
+  // free camera from ?cam=&look= (harness framing); cut-away in close-up mode around the look point
+  const lk = (params.get('look') ?? '0,1,0').split(',').map(Number);
+  const cm = (params.get('cam') ?? '0,5,5').split(',').map(Number);
+  world.setFocus(lk[0] ?? 0, lk[2] ?? 0, viewParam === 'dollhouse' ? 'closeup' : 'dollhouse');
+  world.lighting.setShadowFocus(cm[0] ?? 0, cm[2] ?? 0);
+} else if (viewParam.startsWith('closeup:')) {
   const s = CLOSEUPS[viewParam.slice(8)] ?? CLOSEUPS.vanity!;
   h.frame(s.pos, s.look, s.fov);
-  world.setFocus(s.look[0], s.look[2], 'closeup');
+  world.setFocus(s.focus?.[0] ?? s.look[0], s.focus?.[1] ?? s.look[2], 'closeup');
   world.lighting.setShadowFocus(s.look[0], s.look[2]);
 } else if (viewParam === 'overview') {
   const c: [number, number, number] = [1.5, 0, -1.5];
@@ -163,6 +171,11 @@ if (nav) {
   }
 }
 
+if (params.get('roofdebug') === '1') {
+  world.root.traverse((o) => {
+    if (o.name === 'shadowRoof') ((o as THREE.Mesh).material = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true }));
+  });
+}
 const proj = new THREE.Vector3();
 let settled = false;
 const wiggle = params.get('wiggle') === '1';

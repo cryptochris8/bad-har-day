@@ -9,8 +9,9 @@
 // SHARED CONTRACT (frozen): changes go through the integrator.
 //
 // HAIR SPACE — the brushable part of the hair is a 2D field seen from BEHIND:
-//   u ∈ [0, 1] across the back, 0 = the girl's RIGHT side (= screen-left when the camera is behind her),
-//              1 = her LEFT side (screen-right). (Seen from behind, screen-left == her right.)
+//   u ∈ [0, 1] across the back: u = 0 at head-space +X (= screen-LEFT when the camera is behind her = her LEFT
+//              side, since a character facing +Z has her right hand at −X), u = 1 at head-space −X (screen-right
+//              from behind, her right side). So from the brushing camera behind her, u grows left → right on screen.
 //   v ∈ [0, 1] along the length, 0 = scalp/crown, 1 = the tips.
 // The field is `cols` locks × `rows` sections; cell (col, row) covers
 //   u ∈ [col/cols, (col+1)/cols), v ∈ [row/rows, (row+1)/rows). Index = row * cols + col.
@@ -37,7 +38,7 @@ export interface HairBuildOpts {
   fit: HairFit;
   /** Hair colour (hex). The rig derives darker roots, lighter sheen, underside shade. */
   color: number;
-  /** Length from crown to tips (m). Twins ≈ 0.55, Heidi ≈ 0.48 (long, thick, mid-back). */
+  /** Vertical drop from the crown to the tips (m). Twins 0.64, Heidi 0.56 (long, thick, mid-back). */
   length: number;
   /** Cosmetic seed (lock variation, part side, flyaways). */
   seed: number;

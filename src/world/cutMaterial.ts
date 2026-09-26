@@ -65,8 +65,10 @@ const INK_FRAG_PARS = /* glsl */ `
 varying float vInk;
 varying vec3 vGlow;
 uniform vec3 uInkColor;
+uniform vec3 uTint;
 `;
 const INK_FRAG = /* glsl */ `
+outgoingLight *= uTint;
 if (vGlow.r + vGlow.g + vGlow.b > 0.001) outgoingLight = vGlow;
 if (vInk > 0.5) outgoingLight = uInkColor;
 `;
@@ -88,10 +90,12 @@ export function injectSquash<T extends THREE.Material>(m: T, u: CutUniforms, key
 }
 
 /** Vertex-coloured, inked toon material with the cut-away squash (walls, trims, doors, curtains, wall decor). */
-export function cutToonMaterial(u: CutUniforms, key: string): THREE.MeshToonMaterial {
+export function cutToonMaterial(u: CutUniforms, key: string, tint?: { value: THREE.Color }): THREE.MeshToonMaterial {
   const m = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient() });
   const inkColor = { value: new THREE.Color(PAL.outline) };
+  const uTint = tint ?? { value: new THREE.Color(1, 1, 1) };
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTint = uTint;
     shader.uniforms.uInkColor = inkColor;
     shader.uniforms.uInkScale = { value: INK_WIDTH.SCALE };
     shader.uniforms.uInkMin = { value: INK_WIDTH.MIN };

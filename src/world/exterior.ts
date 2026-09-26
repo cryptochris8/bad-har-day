@@ -12,6 +12,7 @@ import { modelMaterial, sceneryMaterial, windowMaterial } from '../render/models
 import { Frame, plant, type Glows } from './kit';
 import { DRIVEWAY, FENCES, HOUSE, OUT, STREET, YARD, inRect, rect, type Furn, type Rect } from './layout';
 import { HEDGE_T } from './physics';
+import { splitGeometry } from './split';
 import { faceFrame, findWall } from './house';
 
 const fx = (f: Furn) => (f.r.x0 + f.r.x1) / 2;
@@ -356,10 +357,18 @@ export function buildExterior(quality: 'high' | 'low', wallB: GeoBuilder, glows:
     [-12.0, 12.95],
     [7.0, 12.95],
   ] as const) {
-    W.cyl(0.07, 0.09, 3.6, 8, 0x3f4f48, l[0], 1.8, l[1]);
-    W.cyl(0.14, 0.16, 0.2, 8, 0x3f4f48, l[0], 0.1, l[1]);
-    W.cyl(0.2, 0.12, 0.08, 8, 0x3f4f48, l[0], 4.15, l[1]);
-    new Frame(glows.outdoor, l[0], 0, l[1], 0).sphere(0.16, 12, 8, PAL.lampBulb, 0, 3.92, 0, { ink: false });
+    const post = 0x3f4f48;
+    W.cyl(0.06, 0.09, 3.5, 8, post, l[0], 1.75, l[1]);
+    W.cyl(0.15, 0.17, 0.25, 8, post, l[0], 0.12, l[1]);
+    W.torus(0.09, 0.02, 4, 10, post, l[0], 3.45, l[1], { rot: [Math.PI / 2, 0, 0], ink: false });
+    W.cyl(0.05, 0.16, 0.12, 8, post, l[0], 3.62, l[1]);
+    W.cone(0.24, 0.24, 8, post, l[0], 4.32, l[1]);
+    W.ball(0.05, 0, post, l[0], 4.47, l[1], { ink: false });
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      W.box(0.025, 0.46, 0.025, post, l[0] + Math.cos(a) * 0.15, 3.93, l[1] + Math.sin(a) * 0.15, { ink: false });
+    }
+    new Frame(glows.outdoor, l[0], 0, l[1], 0).cyl(0.14, 0.11, 0.42, 8, PAL.lampBulb, 0, 3.92, 0, { ink: false });
   }
   // porch light (front facade) + back door light (east facade), glowing parts in the outdoor group
   const wFront = findWall('x', 4.5, -3.6);
@@ -373,13 +382,17 @@ export function buildExterior(quality: 'high' | 'low', wallB: GeoBuilder, glows:
   bl.on(glows.outdoor).sphere(0.08, 10, 8, PAL.lampBulb, 0, 1.96, 0.1, { ink: false });
 
   const bGeo = B.build();
-  disposables.push(bGeo);
-  const props = new THREE.Mesh(bGeo, modelMaterial());
-  props.name = 'exteriorProps';
-  props.castShadow = false;
+  const region = (x: number, _y: number, z: number): number => (x < -9.4 ? 0 : x > 9.05 && z < -0.85 ? 1 : z > 9.5 || x > 13.6 ? 2 : 3);
+  splitGeometry(bGeo, 4, region).forEach((g, i) => {
+    disposables.push(g);
+    const props = new THREE.Mesh(g, modelMaterial());
+    props.name = 'exteriorProps' + i;
+    props.castShadow = false;
+    props.receiveShadow = true;
+    group.add(props);
+  });
+  bGeo.dispose();
   shrubShadow = null;
-  props.receiveShadow = true;
-  group.add(props);
 
   // ── instanced pickets ──
   const pb = new GeoBuilder(false, false);

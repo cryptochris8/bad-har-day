@@ -5,9 +5,12 @@
 //   dogpose=<DogPose> · mood=excited|calm|sleepy · walk=1|<m/s> · t=<s> (step then freeze)
 //   emote=<Emote> · sleepy=0..1 · look=cam|x,y,z · only=chris,addy,… · extras=1 (school-run extras row)
 //   glasses=1 · beard=none|stubble|beard · skin=0..7 · coat=<DogCoat>
+//   sheet=expr&who=<id>&part=0..2 (5 heads, one expression each) · sheet=action&who=<id>&list=a,b,…
+//   sheet=dog&list=<DogAction>,… (5 dogs) · hair=0 (hide the girls' hair)
 import * as THREE from 'three';
 import { createHarness } from './harness';
-import { createExtra, createFamily, sanitizeLooks } from '../src/family';
+import { createCharacter, createDog, createExtra, createFamily, sanitizeLooks } from '../src/family';
+import { EXPRESSIONS } from '../src/family/expressions';
 import { PAL } from '../src/render/palette';
 import { countTriangles } from '../src/render/models/builder';
 import type { Action, Character, DogAction, DogPose, Emote, Expression, HoldKind, MemberId, Outfit, Pose } from '../src/family/types';
@@ -28,7 +31,8 @@ if (q.has('skin')) for (const id of MEMBERS) looks.members[id].skin = num('skin'
 if (q.get('coat')) looks.dog.coat = q.get('coat') as typeof looks.dog.coat;
 const fam = createFamily(sanitizeLooks(looks));
 
-const only = q.get('only')?.split(',').filter(Boolean) ?? null;
+const sheet = q.get('sheet');
+const only = sheet ? [] : (q.get('only')?.split(',').filter(Boolean) ?? null);
 const X: Record<MemberId, number> = { chris: -1.75, ashley: -0.85, addy: 0.05, ellie: 0.8, heidi: 1.52 };
 const shown: Character[] = [];
 for (const id of MEMBERS) {
@@ -39,11 +43,49 @@ for (const id of MEMBERS) {
   shown.push(c);
 }
 const dog = fam.dog;
-const showDog = !only || only.includes('dog');
+const showDog = !sheet && (!only || only.includes('dog'));
 if (showDog) {
   dog.root.position.set(2.35, 0, 0.15);
   dog.root.rotation.y = -0.35;
   h.scene.add(dog.root);
+}
+
+// Review sheets: 5 clones side by side.
+const sheetLabels: { text: string; obj: THREE.Object3D }[] = [];
+const sheetDogs: ReturnType<typeof createDog>[] = [];
+if (sheet === 'expr' || sheet === 'action') {
+  const who = (q.get('who') ?? 'addy') as MemberId;
+  const part = num('part', 0);
+  const list = sheet === 'expr' ? EXPRESSIONS.slice(part * 5, part * 5 + 5) : (q.get('list') ?? 'wave,cheer,jump,yawn,gasp').split(',');
+  const gap = sheet === 'expr' ? 0.5 : 0.95;
+  list.forEach((name, i) => {
+    const c = createCharacter(who, looks.members[who]);
+    c.root.position.set((i - (list.length - 1) / 2) * gap, 0, 0);
+    h.scene.add(c.root);
+    if (sheet === 'expr') c.setExpression(name as Expression);
+    else c.play(name as Action, { loop: true });
+    shown.push(c);
+    const tag = new THREE.Object3D();
+    tag.position.set(0, sheet === 'expr' ? c.height + 0.12 : -0.02, 0);
+    c.root.add(tag);
+    sheetLabels.push({ text: name, obj: tag });
+  });
+  const headY = shown[0] ? shown[0].height - 0.18 : 1;
+  if (sheet === 'expr' && !q.has('cam')) h.frame([0, headY + 0.04, 2.3], [0, headY - 0.02, 0], 34);
+  if (sheet === 'action' && !q.has('cam')) h.frame([0, 1.1, 5.4], [0, 0.72, 0], 38);
+} else if (sheet === 'dog') {
+  const list = (q.get('list') ?? 'bark,wag,sniff,pee,stare').split(',');
+  list.forEach((name, i) => {
+    const d = createDog(looks.dog);
+    d.root.position.set((i - (list.length - 1) / 2) * 0.95, 0, 0);
+    d.root.rotation.y = -0.5;
+    h.scene.add(d.root);
+    if (name.startsWith('pose:')) d.setPose(name.slice(5) as DogPose);
+    else d.play(name as DogAction, { loop: true });
+    sheetDogs.push(d);
+    sheetLabels.push({ text: name, obj: d.root });
+  });
+  if (!q.has('cam')) h.frame([0, 1.3, 4.2], [0, 0.35, 0], 38);
 }
 
 // Optional extras row behind.
@@ -102,6 +144,11 @@ if (emote) {
   for (const c of shown) c.emote(emote, 999);
   if (showDog) dog.emote(emote, 999);
 }
+const emoteList = q.get('emotes')?.split(',').filter(Boolean) as Emote[] | undefined;
+if (emoteList) {
+  shown.forEach((c, i) => emoteList[i] && c.emote(emoteList[i]!, 999));
+  if (showDog && emoteList[shown.length]) dog.emote(emoteList[shown.length]!, 999);
+}
 const dogAction = q.get('dog') as DogAction | null;
 if (dogAction) dog.play(dogAction, { loop });
 const dogPose = q.get('dogpose') as DogPose | null;
@@ -123,6 +170,8 @@ let simT = 0;
 const tick = (dt: number) => {
   fam.update(dt);
   for (const e of extras) e.update(dt);
+  if (sheet) for (const c of shown) c.update(dt);
+  for (const d of sheetDogs) d.update(dt);
 };
 if (tFreeze >= 0) {
   while (simT < tFreeze - 1e-9) {
@@ -153,7 +202,8 @@ const mkLabel = (text: string, obj: THREE.Object3D) => {
   document.body.appendChild(el);
   labels.push({ el, obj });
 };
-if (q.get('labels') !== '0' && !focus) {
+for (const l of sheetLabels) mkLabel(l.text, l.obj);
+if (q.get('labels') !== '0' && !focus && !sheet) {
   for (const c of shown) mkLabel(c.id[0]!.toUpperCase() + c.id.slice(1), c.root);
   if (showDog) mkLabel(dog.name, dog.root);
 }

@@ -103,6 +103,13 @@ export class ResultsScreen implements Screen {
       this.skip();
       return true;
     }
+    if (a === 'up' || a === 'down') {
+      // The paper scrolls on short screens (phones on their side).
+      const dy = a === 'up' ? -90 : 90;
+      if (typeof this.paper.scrollBy === 'function') this.paper.scrollBy({ top: dy, behavior: 'smooth' });
+      else this.paper.scrollTop += dy;
+      return true;
+    }
     return false;
   }
 
@@ -161,7 +168,13 @@ export class ResultsScreen implements Screen {
     const at = (t: number, run: () => void): void => {
       this.steps.push({ t, run });
     };
-    const show = (node: HTMLElement): void => node.classList.add('is-in');
+    const show = (node: HTMLElement): void => {
+      node.classList.add('is-in');
+      // Keep the newest line of the reveal in view when the paper scrolls (short screens).
+      if (!this.skipping && this.paper.scrollHeight > this.paper.clientHeight + 4 && typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ block: 'nearest', behavior: this.ctx.reducedMotion() ? 'auto' : 'smooth' });
+      }
+    };
 
     // ── header ──
     const meta = report.daily && report.dateKey ? `DAILY MORNING · ${report.dateKey}` : `MORNING No. ${String(Math.abs(Math.floor(report.seed)) % 100000).padStart(5, '0')}`;

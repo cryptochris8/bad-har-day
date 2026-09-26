@@ -362,17 +362,17 @@ const cutleryDirty = (): Geo =>
 
 const sippyDirty = (): Geo => blobs([[0.0, 0.03, 0.006, PAL.juiceOrange, 9]], 0.1, 1.4);
 
-const panDirty = (): Geo =>
-  blobs(
-    [
-      [-0.03, 0.02, 0.028, PAL.eggWhite, 11],
-      [-0.03, 0.02, 0.011, PAL.eggYolk, 12],
-      [0.045, -0.02, 0.012, PAL.toast, 13],
-      [0.02, 0.05, 0.008, PAL.toast, 14],
-    ],
-    0.013,
-    0.2,
-  );
+const panDirty = (): Geo => {
+  const b = inked();
+  b.sphere(0.028, 10, 4, PAL.eggWhite, { at: [-0.03, 0.013, 0.02], scale: [1.25, 0.2, 1], jitter: 0.003, seed: 11, ink: false, smooth: true });
+  b.sphere(0.011, 8, 5, PAL.eggYolk, { at: [-0.026, 0.017, 0.018], scale: [1, 0.55, 1], ink: false, smooth: true });
+  for (const [x, z, r, s] of [
+    [0.045, -0.02, 0.012, 13],
+    [0.02, 0.05, 0.008, 14],
+  ] as const)
+    b.sphere(r, 8, 4, PAL.toast, { at: [x, 0.013, z], scale: [1.25, 0.2, 1], jitter: r * 0.12, seed: s, ink: false, smooth: true });
+  return b.build();
+};
 
 export const DISH_SPECS: Readonly<Record<DishKind, DishSpec>> = {
   plate: { body: plateGeo, dirty: plateDirty, grip: [0.122, 0.018, 0] },

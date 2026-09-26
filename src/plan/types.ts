@@ -71,6 +71,8 @@ export interface DayPlan {
   drive: DriveEvent[];
   /** Twins' outfit accent variant etc. — cosmetic seed. */
   cosmeticSeed: number;
+  /** Ashley's coffee order (FAMILY SETUP preference, not seeded). */
+  coffeeOrder: CoffeeOrder;
 }
 
 // ── Acts & clock ─────────────────────────────────────────────────────────────

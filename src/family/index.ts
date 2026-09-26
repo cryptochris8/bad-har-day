@@ -20,7 +20,8 @@ export { DEFAULT_LOOKS, sanitizeLooks };
 /** Cosmetic hair seeds per girl (lock variation, part side). */
 export const GIRL_HAIR_SEED: Readonly<Record<GirlId, number>> = { addy: 101, ellie: 202, heidi: 303 };
 /** Hair length (crown → tips, m). */
-export const GIRL_HAIR_LENGTH: Readonly<Record<GirlId, number>> = { addy: 0.55, ellie: 0.55, heidi: 0.48 };
+/** Crown → tips drop (m): long, thick, mid-back hair (GDD §1). */
+export const GIRL_HAIR_LENGTH: Readonly<Record<GirlId, number>> = { addy: 0.64, ellie: 0.64, heidi: 0.56 };
 
 const isGirl = (id: MemberId): id is GirlId => id === 'addy' || id === 'ellie' || id === 'heidi';
 

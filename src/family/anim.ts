@@ -169,7 +169,7 @@ function personaIdle(p: Pose, d: Drive, w: number): void {
       add(p, C.hz, -0.03 * Math.sin(t * 1.2) * w);
       set(p, C.ikL, w);
       set(p, C.ikR, w);
-      for (const side of [0, 1]) {
+      for (let side = 0; side < 2; side++) {
         const o = side === 0 ? C.tLo : C.tRo;
         set(p, o, -s.shoulderX + 0.03);
         set(p, o + 1, -(s.shoulderY - s.spineY) - 0.02);
@@ -312,14 +312,16 @@ function locomotion(p: Pose, d: Drive): void {
   add(p, C.hz, 0.03 * Math.sin(ph * 2) * w * bouncy);
   if (d.persona === 'ashley') add(p, C.pz, 0.05 * s0 * w);
   // Arms swing opposite the legs (unless busy).
-  const free = (side: 0 | 1) => (side === 0 ? d.hold !== 'box' && d.hold !== 'wheel' : d.hold === 'none') && d.persona !== 'ellie' || (d.persona === 'ellie' && w > 0.5);
-  if (free(0)) {
+  const ellieOk = d.persona !== 'ellie' || w > 0.5;
+  const freeL = d.hold !== 'box' && d.hold !== 'wheel' && ellieOk;
+  const freeR = d.hold === 'none' && ellieOk;
+  if (freeL) {
     mt(p, C.ikL, 0, w);
     mt(p, C.aLx, armA * s0 - 0.1 * g, w);
     mt(p, C.aLe, elb + 0.3 * Math.max(0, -armA * s0), w);
     mt(p, C.aLo, 0.12 + 0.06 * g, w);
   }
-  if (free(1)) {
+  if (freeR) {
     mt(p, C.ikR, 0, w);
     mt(p, C.aRx, -armA * s0 - 0.1 * g, w);
     mt(p, C.aRe, elb + 0.3 * Math.max(0, armA * s0), w);
@@ -377,7 +379,7 @@ export function sitPose(p: Pose, d: Drive): void {
   set(p, C.hx, 0.02);
   // Hands resting on the thighs.
   const sitShoulderY = hjY + (s.shoulderY - hj0);
-  for (const side of [0, 1] as const) {
+  for (let side: 0 | 1 = 0; side < 2; side = (side + 1) as 0 | 1) {
     const sg = side === 0 ? 1 : -1;
     const tx = sg * (s.hipX + 0.03);
     const ty = hjY + s.legR * 1.15 + s.handR * 0.5;
@@ -445,10 +447,15 @@ export function liePose(p: Pose, d: Drive): void {
   set(p, C.aLx, mix(-0.1, -0.9, as));
   set(p, C.aLe, mix(0.4, 1.4, as));
   set(p, C.aRo, mix(0.12, 0.05, as));
-  set(p, C.aRx, mix(-0.35, -1.1, as));
-  set(p, C.aRe, mix(1.5, 1.1, as));
+  set(p, C.aRx, mix(-0.1, -1.1, as));
+  set(p, C.aRe, mix(0.4, 1.1, as));
   set(p, C.sx, mix(0, 0.25, as));
   set(p, C.hz, 0.05 * side);
+  // On the back: right hand resting on the tummy (IK target in the chest frame).
+  if (as < 0.5) {
+    const tgt = rel(s, 1, -0.02, s.spineY + 0.03, s.torsoD + s.handR * 0.7, _r);
+    ik(p, 1, 1 - as * 2, tgt[0], tgt[1], tgt[2], 0.9, -0.2, 0.3);
+  }
 }
 
 // ── actions ───────────────────────────────────────────────────────────────────
@@ -607,6 +614,10 @@ const TOSS_X: Track = [0, -0.04, 0.3, 0.75, 0.52, -1.65, 0.75, -1.3, 1, -0.04];
 const TOSS_K: Track = [0, 0, 0.3, 0.35, 0.52, 0.05, 1, 0];
 const BOUNCE_PY: Track = [0, 0, 0.15, 0, 0.5, 1, 0.85, 0, 1, 0];
 const BOUNCE_SQ: Track = [0, 0.9, 0.18, 1.06, 0.5, 1.02, 0.82, 1.04, 0.92, 0.9, 1, 0.9];
+const FLIP_Z: Track = [0, 0, 0.3, -0.35, 0.5, 0.12, 1, 0];
+const FLIP_Y: Track = [0, 0, 0.3, 0.28, 0.55, -0.05, 1, 0];
+const LOOK_AROUND: Track = [0, 0, 0.25, 0.6, 0.5, 0.6, 0.72, -0.55, 0.9, -0.5, 1, 0];
+const TWIRL: Track = [0, 0, 0.12, 0.2, 0.75, Math.PI * 2 - 0.15, 0.9, Math.PI * 2, 1, Math.PI * 2];
 
 /** Write action `a` at progress u onto p (p holds the base pose). */
 export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
@@ -636,7 +647,8 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
       add(p, C.hpy, 0.26 * s.scale * trk(u, JUMP_PY));
       set(p, C.sq, mix(get(p, C.sq), trk(u, JUMP_SQ), w));
       const k = trk(u, JUMP_K);
-      for (const b of [C.lLx, C.lRx]) {
+      for (let li = 0; li < 2; li++) {
+        const b = li === 0 ? C.lLx : C.lRx;
         mt(p, b, -0.45 * k, w);
         mt(p, b + 3, 0.95 * k, w);
         mt(p, b + 4, -0.3 * k, w);
@@ -676,7 +688,7 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
     case 'gasp': {
       const w = envelope(u, 0.12, 0.25);
       const r = s.headRx;
-      for (const side of [0, 1] as const) {
+      for (let side: 0 | 1 = 0; side < 2; side = (side + 1) as 0 | 1) {
         const tgt = headTarget(s, side, (side === 0 ? 1 : -1) * r * 0.82, -s.headRy * 0.35, s.headRz * 0.35);
         ik(p, side, w, tgt[0], tgt[1], tgt[2] + 0.02, 0.9, -1, -0.1);
       }
@@ -700,7 +712,8 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
       mt(p, C.hx, -0.5, w);
       mt(p, C.sx, -0.16, w);
       mt(p, C.bz, 0.06 * sway, w);
-      for (const b of [C.lLx, C.lRx]) {
+      for (let li = 0; li < 2; li++) {
+        const b = li === 0 ? C.lLx : C.lRx;
         mt(p, b, -0.35, w);
         mt(p, b + 3, 0.7, w);
         mt(p, b + 4, -0.35, w);
@@ -773,7 +786,8 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
     }
     case 'pickUpLow': {
       const w = envelope(u, 0.3, 0.3);
-      for (const b of [C.lLx, C.lRx]) {
+      for (let li = 0; li < 2; li++) {
+        const b = li === 0 ? C.lLx : C.lRx;
         mt(p, b, -0.95, w);
         mt(p, b + 3, 1.7, w);
         mt(p, b + 4, -0.6, w);
@@ -823,7 +837,8 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
     case 'hug': {
       const w = envelope(u, 0.12, 0.2);
       const close = smooth01((u - 0.2) / 0.18);
-      for (const side of [0, 1] as const) ik(p, side, w, mix(0.36, -0.2, close) * L, -0.3 * L, mix(0.78, 0.46, close) * L, 0.9, -0.4, -0.4);
+      ik(p, 0, w, mix(0.36, -0.2, close) * L, -0.3 * L, mix(0.78, 0.46, close) * L, 0.9, -0.4, -0.4);
+      ik(p, 1, w, mix(0.36, -0.2, close) * L, -0.3 * L, mix(0.78, 0.46, close) * L, 0.9, -0.4, -0.4);
       mt(p, C.bz, 0.04 * Math.sin(at * 3) * close, w);
       mt(p, C.hz, 0.12 * close, w);
       mt(p, C.sx, 0.1 * close, w);
@@ -873,9 +888,9 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
     }
     case 'hairFlip': {
       const w = envelope(u, 0.1, 0.3);
-      const flick = trk(u, [0, 0, 0.3, -0.35, 0.5, 0.12, 1, 0]);
+      const flick = trk(u, FLIP_Z);
       add(p, C.hz, flick * w);
-      add(p, C.hy, trk(u, [0, 0, 0.3, 0.28, 0.55, -0.05, 1, 0]) * w);
+      add(p, C.hy, trk(u, FLIP_Y) * w);
       mt(p, C.hx, -0.14, w);
       const out = smooth01((u - 0.25) / 0.2);
       ik(p, 1, w, mix(-0.02, 0.3, out) * L, mix(-0.05, 0.1, out) * L, 0.12 * L, 0.8, -1, -0.2);
@@ -940,7 +955,8 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
       add(p, C.hpy, 0.07 * s.scale * trk(uu, BOUNCE_PY) * w);
       set(p, C.sq, mix(get(p, C.sq), trk(uu, BOUNCE_SQ), w));
       const air = trk(uu, BOUNCE_PY);
-      for (const b of [C.lLx, C.lRx]) {
+      for (let li = 0; li < 2; li++) {
+        const b = li === 0 ? C.lLx : C.lRx;
         mt(p, b, -0.25 * (1 - air), w);
         mt(p, b + 3, 0.5 * (1 - air), w);
         mt(p, b + 4, 0.2 * air, w);
@@ -990,19 +1006,24 @@ export const PERSONA_GESTURES: Readonly<Record<Persona, readonly Gesture[]>> = {
   neighbor: ['idleWave', 'lookAround'],
 };
 
-/** Seconds between idle gestures [min, max). */
-export function gestureInterval(persona: Persona): [number, number] {
+const GI_KIDS: readonly [number, number] = [2.8, 5.5];
+const GI_CALM: readonly [number, number] = [4.5, 8];
+const GI_CHRIS: readonly [number, number] = [4, 7.5];
+const GI_OTHER: readonly [number, number] = [5, 10];
+
+/** Seconds between idle gestures [min, max) (shared tuples: no allocation). */
+export function gestureInterval(persona: Persona): readonly [number, number] {
   switch (persona) {
     case 'addy':
     case 'heidi':
-      return [2.8, 5.5];
+      return GI_KIDS;
     case 'ellie':
     case 'ashley':
-      return [4.5, 8];
+      return GI_CALM;
     case 'chris':
-      return [4, 7.5];
+      return GI_CHRIS;
     default:
-      return [5, 10];
+      return GI_OTHER;
   }
 }
 
@@ -1088,7 +1109,7 @@ export function gesturePose(p: Pose, g: Gesture, u: number, c: ActCtx): void {
     }
     case 'lookAround': {
       const w = envelope(u, 0.15, 0.2);
-      add(p, C.hy, trk(u, [0, 0, 0.25, 0.6, 0.5, 0.6, 0.72, -0.55, 0.9, -0.5, 1, 0]) * w);
+      add(p, C.hy, trk(u, LOOK_AROUND) * w);
       add(p, C.hx, -0.05 * w);
       break;
     }
@@ -1111,7 +1132,7 @@ export function gesturePose(p: Pose, g: Gesture, u: number, c: ActCtx): void {
     }
     case 'twirl': {
       const w = envelope(u, 0.04, 0.06);
-      set(p, C.by, get(p, C.by) + trk(u, [0, 0, 0.12, 0.2, 0.75, Math.PI * 2 - 0.15, 0.9, Math.PI * 2, 1, Math.PI * 2]));
+      set(p, C.by, get(p, C.by) + trk(u, TWIRL));
       add(p, C.hpy, 0.035 * s.scale * Math.sin(Math.min(1, u / 0.85) * Math.PI) * w);
       mt(p, C.ikL, 0, w);
       mt(p, C.ikR, 0, w);

@@ -160,7 +160,7 @@ export function computeCutTargets(walls: readonly WallDef[], v: CutView, out: Fl
     return;
   }
   // close-up: walls crossing the camera → focus ground line (padded) drop
-  const pad = 0.35;
+  const pad = 0.22;
   for (let i = 0; i < walls.length; i++) {
     const w = walls[i]!;
     const h = w.t / 2 + pad;

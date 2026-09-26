@@ -141,39 +141,56 @@ function buildCar(s: CarSpec, name: string): CarBuild {
   };
   sideSkins(1, [s.frontDoor]);
   sideSkins(-1, [s.frontDoor, s.rearDoor]);
-  // nose (hood + front fenders) and tail
-  f.rbox(W, s.belt - 0.28, 0.62, 0.12, col, 0, 0.28 + (s.belt - 0.28) / 2, zf - 0.31, {}, 2);
-  f.rbox(W, s.belt - 0.28, 0.4, 0.12, col, 0, 0.28 + (s.belt - 0.28) / 2, zr + 0.2, {}, 2);
-  f.rbox(W - 0.02, 0.12, zf - s.windBottom + 0.02, 0.05, col, 0, s.belt - 0.05, (zf + s.windBottom) / 2, {}, 1);
-  // bumpers, grille, lights (lenses), plates, mirrors, wheel arches
-  f.rbox(W + 0.04, 0.2, 0.18, 0.08, PAL.carTrim, 0, 0.36, zf - 0.02, {}, 2);
-  f.rbox(W + 0.04, 0.2, 0.18, 0.08, PAL.carTrim, 0, 0.36, zr + 0.02, {}, 2);
-  f.rbox(W * 0.5, 0.16, 0.04, 0.04, shadeHex(PAL.carTrim, 1.3), 0, 0.64, zf + 0.005, {}, 1);
+  // nose (rounded, with a gently sloping hood) and tail
+  const noseL = zf - s.windBottom;
+  f.rbox(W, s.belt - 0.26, 0.7, 0.22, col, 0, 0.26 + (s.belt - 0.26) / 2, zf - 0.35, {}, 2);
+  f.rbox(W - 0.04, 0.1, noseL + 0.02, 0.05, col, 0, s.belt - 0.06, (zf + s.windBottom) / 2 - 0.02, { rot: [0.07, 0, 0] }, 2);
+  f.rbox(W, s.belt - 0.26, 0.46, 0.18, col, 0, 0.26 + (s.belt - 0.26) / 2, zr + 0.23, {}, 2);
+  // bumpers, grille, lights (lenses), plate, mirrors
+  f.rbox(W + 0.04, 0.2, 0.2, 0.09, PAL.carTrim, 0, 0.36, zf - 0.03, {}, 2);
+  f.rbox(W + 0.04, 0.2, 0.2, 0.09, PAL.carTrim, 0, 0.36, zr + 0.03, {}, 2);
+  f.rbox(W * 0.46, 0.14, 0.04, 0.05, shadeHex(PAL.carTrim, 1.3), 0, 0.64, zf + 0.0, {}, 1);
   for (const sx of [-1, 1]) {
-    f.sphere(0.1, 12, 8, 0xfff6dc, sx * (W / 2 - 0.22), 0.72, zf - 0.02, { scale: [1.4, 0.8, 0.5] });
-    f.rbox(0.28, 0.14, 0.05, 0.03, 0xe05a5a, sx * (W / 2 - 0.2), s.belt - 0.08, zr + 0.01, {}, 1);
-    f.rbox(0.07, 0.1, 0.16, 0.03, dark, sx * (W / 2 + 0.06), s.belt + 0.08, s.frontDoor[1] - 0.05, {}, 1);
+    f.sphere(0.1, 12, 8, 0xfff6dc, sx * (W / 2 - 0.24), 0.74, zf - 0.04, { scale: [1.35, 0.85, 0.5] });
+    f.rbox(0.26, 0.16, 0.05, 0.04, 0xe05a5a, sx * (W / 2 - 0.2), s.belt - 0.1, zr + 0.005, {}, 1);
+    f.rbox(0.08, 0.11, 0.17, 0.04, dark, sx * (W / 2 + 0.06), s.belt + 0.08, s.frontDoor[1] - 0.06, {}, 1);
+    // side trim line
+    f.box(0.012, 0.035, L - 0.9, shadeHex(col, 0.7), sx * (W / 2 + 0.002), s.belt - 0.26, -0.05, { ink: false });
   }
-  f.box(0.42, 0.13, 0.02, 0xfff6c8, 0, 0.46, zr - 0.075, { ink: false });
-  for (const sx of [-1, 1])
-    for (const wz of [s.wheelBase / 2, -s.wheelBase / 2]) f.cyl(s.wheelR + 0.07, s.wheelR + 0.07, 0.04, 18, 0x23252b, sx * (W / 2 + 0.005), s.wheelR, wz, { rot: [0, 0, Math.PI / 2], ink: false });
-  // pillars + roof (+ roof rails on the van)
+  f.box(0.42, 0.13, 0.02, 0xfff6c8, 0, 0.47, zr - 0.08, { ink: false });
+  // roof (overhanging, rounded) + pillars (slanted A and D, upright B/C) + roof rails on the van
   const roofZ0 = s.rearTop;
   const roofZ1 = s.windTop;
-  f.rbox(W - 0.08, 0.09, roofZ1 - roofZ0, 0.04, col, 0, s.roof - 0.045, (roofZ0 + roofZ1) / 2, {}, 2);
+  f.rbox(W - 0.02, 0.1, roofZ1 - roofZ0 + 0.1, 0.05, col, 0, s.roof - 0.05, (roofZ0 + roofZ1) / 2, {}, 2);
+  const slanted = (x: number, zBottom: number, zTop: number) => {
+    const dz = zBottom - zTop;
+    const dy = s.roof - s.belt;
+    f.box(0.07, Math.hypot(dz, dy), 0.09, dark, x, (s.roof + s.belt) / 2, (zBottom + zTop) / 2, { rot: [-Math.atan2(dz, dy), 0, 0] });
+  };
   for (const sx of [-1, 1]) {
     const x = sx * (W / 2 - 0.06);
     const pillar = (z: number) => f.box(0.07, s.roof - s.belt, 0.08, dark, x, (s.roof + s.belt) / 2, z);
-    // A pillar (slanted from the windshield bottom to the roof front)
-    const dz = s.windBottom - s.windTop;
-    const dy = s.roof - s.belt;
-    f.box(0.07, Math.hypot(dz, dy), 0.08, dark, x, (s.roof + s.belt) / 2, (s.windBottom + s.windTop) / 2, { rot: [Math.atan2(dz, dy), 0, 0] });
+    slanted(x, s.windBottom, s.windTop);
+    slanted(x, zr + 0.08, roofZ0);
     pillar(s.frontDoor[0] - 0.02);
-    pillar(roofZ0 + 0.04);
     if (s.len > 4.5) {
       pillar(s.rearDoor[0] - 0.04);
       f.box(0.04, 0.04, roofZ1 - roofZ0 - 0.4, PAL.carTrim, sx * (W / 2 - 0.2), s.roof + 0.03, (roofZ0 + roofZ1) / 2);
+      for (const z of [roofZ0 + 0.3, roofZ1 - 0.3]) f.box(0.04, 0.05, 0.05, PAL.carTrim, sx * (W / 2 - 0.2), s.roof + 0.01, z, { ink: false });
     }
+  }
+  if (s.len > 4.5) {
+    // stick-figure family decal on the rear window (abstract, never likenesses) + the dog
+    const zD = zr + 0.13;
+    const tilt = Math.atan2(roofZ0 - (zr + 0.06), s.roof - s.belt);
+    const fig = (x: number, h: number) => {
+      const y0 = s.belt + 0.08;
+      const zz = zD - 0.012 + ((h * 0.6) / (s.roof - s.belt)) * (roofZ0 - zr - 0.06) * 0.5;
+      f.box(0.012, h * 0.55, 0.004, 0xffffff, x, y0 + h * 0.3, zz, { rot: [tilt, 0, 0], ink: false });
+      f.ball(h * 0.13, 0, 0xffffff, x, y0 + h * 0.66, zz + h * 0.1, { ink: false, scale: [1, 1, 0.3] });
+    };
+    [0.3, 0.28, 0.21, 0.21, 0.18].forEach((h, i) => fig(-0.5 + i * 0.1, h));
+    f.box(0.07, 0.025, 0.004, 0xffffff, -0.0, s.belt + 0.11, zD - 0.005, { rot: [tilt, 0, 0], ink: false });
   }
   const body = new THREE.Mesh(B.build(), modelMaterial());
   body.castShadow = false;
@@ -183,7 +200,7 @@ function buildCar(s: CarSpec, name: string): CarBuild {
   disposables.push(body.geometry);
 
   // cabin glass: windshield, rear window, side panes not on doors
-  const glassMat = s.seeThrough ? basicMaterial(PAL.glass, { opacity: 0.32, doubleSide: true }) : basicMaterial(shadeHex(PAL.glass, 0.72), { doubleSide: true });
+  const glassMat = s.seeThrough ? basicMaterial(PAL.glass, { opacity: 0.45, doubleSide: true }) : basicMaterial(shadeHex(PAL.glass, 0.72), { doubleSide: true });
   const gpos: number[] = [];
   const quad = (a: number[], b: number[], c: number[], d: number[]) => gpos.push(...a, ...b, ...c, ...a, ...c, ...d);
   const hw = W / 2 - 0.07;
@@ -249,6 +266,7 @@ function buildCar(s: CarSpec, name: string): CarBuild {
   const tilt = Math.atan2(roofZ0 - (zr + 0.06), s.roof - s.belt);
   hf.rbox(W - 0.1, hh, 0.06, 0.03, col, 0, -hh / 2, -0.03, { rot: [-tilt * 0.5, 0, 0] }, 1);
   hf.box(W - 0.4, 0.08, 0.03, PAL.carTrim, 0, -hh + 0.35, -0.08);
+  hf.rbox(W - 0.34, hh * 0.45, 0.02, 0.02, shadeHex(PAL.glass, 0.8), 0, -hh * 0.28, -0.065, { rot: [-tilt * 0.5, 0, 0], ink: false });
   const hm = new THREE.Mesh(hb.build(), modelMaterial());
   hm.castShadow = true;
   disposables.push(hm.geometry);

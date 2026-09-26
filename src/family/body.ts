@@ -178,7 +178,7 @@ export function print(
       const p = tubePoint(rings, phi, y, 0.002);
       const n = new THREE.Vector3(...p.n);
       if (kind === 'dot') {
-        b.add(new THREE.CircleGeometry(size, 6), color, { at: p.pos, rot: alignZ(n), ink: false });
+        b.add(new THREE.CircleGeometry(size, 5), color, { at: p.pos, rot: alignZ(n), ink: false });
       } else {
         b.add(new THREE.ShapeGeometry(new THREE.Shape(starPoints(size, size * 0.45).map(([x, y]) => new THREE.Vector2(x, y))), 1), color, { at: p.pos, rot: alignZ(n, jitter), ink: false });
       }
@@ -356,10 +356,8 @@ export function hands(ctx: BodyCtx, color = ctx.skin): void {
   const r = s.handR;
   for (const sd of [1, -1] as const) {
     const h = ctx.sb.on(sd > 0 ? B.handL : B.handR);
-    h.sphere(r, ctx.low ? 7 : 8, 6, color, { at: [0, -r * 0.82, 0], scale: [0.8, 1.05, 0.96], smooth: true });
-    h.sphere(r * 0.42, 6, 4, color, { at: [0, -r * 0.42, r * 0.76], rot: [-0.55, 0, 0], scale: [0.85, 1.45, 0.85], smooth: true });
-    // Wrist (hidden in the cuff).
-    h.cyl(s.armR * 0.72, s.armR * 0.72, r * 0.5, 6, color, { at: [0, -r * 0.05, 0], smooth: true, ink: false });
+    h.sphere(r, 7, 5, color, { at: [0, -r * 0.82, 0], scale: [0.8, 1.05, 0.96], smooth: true });
+    h.sphere(r * 0.42, 5, 4, color, { at: [0, -r * 0.42, r * 0.76], rot: [-0.55, 0, 0], scale: [0.85, 1.45, 0.85], smooth: true });
     // Pointing finger (bone-scaled; hidden unless pointing / shh).
     const f = ctx.sb.on(sd > 0 ? B.fingerL : B.fingerR);
     f.sphere(r * 0.24, 5, 4, color, { at: [0, -r * 0.42, 0], scale: [1, 2.1, 1], smooth: true, ink: false });
@@ -386,12 +384,11 @@ export function feet(ctx: BodyCtx, st: ShoeStyle): void {
     const f = ctx.sb.on(sd > 0 ? B.footL : B.footR);
     switch (st.kind) {
       case 'sneaker': {
-        f.sphere(1, 9, 4, PAL.sneakerSole, { at: [0, -A + A * 0.28, zc], scale: [W * 0.98, A * 0.36, L * 0.56], smooth: true });
-        f.sphere(1, 9, 3, st.accent, { at: [0, -A + A * 0.55, zc], scale: [W * 0.94, A * 0.14, L * 0.54], smooth: true, ink: false });
-        f.sphere(1, 9, 5, st.color, { at: [0, -A + A * 0.85, zc - L * 0.02], scale: [W * 0.9, A * 0.78, L * 0.5], smooth: true });
-        f.sphere(1, 7, 4, PAL.sneakerSole, { at: [0, -A + A * 0.62, zc + L * 0.34], scale: [W * 0.84, A * 0.5, L * 0.22], smooth: true, ink: false });
+        f.sphere(1, 8, 3, PAL.sneakerSole, { at: [0, -A + A * 0.28, zc], scale: [W * 0.98, A * 0.36, L * 0.56], smooth: true });
+        f.sphere(1, 8, 4, st.color, { at: [0, -A + A * 0.85, zc - L * 0.02], scale: [W * 0.9, A * 0.78, L * 0.5], smooth: true });
+        f.sphere(1, 6, 3, PAL.sneakerSole, { at: [0, -A + A * 0.62, zc + L * 0.34], scale: [W * 0.84, A * 0.5, L * 0.22], smooth: true, ink: false });
         for (const e of [-1, 1]) f.sphere(1, 5, 3, st.accent, { at: [e * W * 0.86, -A + A * 0.95, zc - L * 0.04], rot: [0.3, 0, 0], scale: [W * 0.12, A * 0.26, L * 0.22], smooth: true, ink: false });
-        for (let i = 0; i < 2; i++) f.box(W * 0.8, A * 0.14, A * 0.2, st.accent, { at: [0, -A + A * (1.45 - i * 0.2), zc + L * (0.1 + i * 0.1)], rot: [-0.6, 0, 0], ink: false });
+        f.box(W * 0.8, A * 0.16, A * 0.22, st.accent, { at: [0, -A + A * 1.4, zc + L * 0.12], rot: [-0.6, 0, 0], ink: false });
         f.cyl(W * 0.72, W * 0.82, A * 0.6, 7, st.color, { at: [0, -A + A * 1.5, zc - L * 0.22], smooth: true, ink: false });
         break;
       }
@@ -447,15 +444,16 @@ export function hood(ctx: BodyCtx, color: number, lining: number, loose = 1): vo
   const b = ctx.sb.on(B.chest);
   const y = s.shoulderY - s.chestY + s.armR * 0.75;
   const nr = neckR(s);
-  b.torus(nr * 1.75 * loose, nr * 0.62, 5, 12, color, { at: [0, y, -s.torsoD * 0.12 * loose], rot: [Math.PI / 2 - 0.25, 0, 0], scale: [1.05, 1.05, 0.9], smooth: true }, Math.PI * 1.35);
-  b.sphere(1, 8, 5, color, { at: [0, y + 0.01, -s.torsoD * 0.72 * loose - 0.01 * (loose - 1) * 10], scale: [s.torsoW * 0.62, s.armR * 1.35, s.torsoD * 0.42], smooth: true });
+  b.torus(nr * 1.75 * loose, nr * 0.62, 4, 10, color, { at: [0, y, -s.torsoD * 0.12 * loose], rot: [Math.PI / 2 - 0.25, 0, 0], scale: [1.05, 1.05, 0.9], smooth: true }, Math.PI * 1.35);
+  b.sphere(1, 7, 4, color, { at: [0, y + 0.01, -s.torsoD * 0.72 * loose - 0.01 * (loose - 1) * 10], scale: [s.torsoW * 0.62, s.armR * 1.35, s.torsoD * 0.42], smooth: true });
   b.sphere(1, 6, 3, lining, { at: [0, y + s.armR * 0.35, -s.torsoD * 0.6 * loose], scale: [s.torsoW * 0.4, s.armR * 0.55, s.torsoD * 0.3], smooth: true, ink: false });
 }
 
 /** Rounded front patch (kangaroo pocket, bib) on a torso tube (base-bone blended builder). */
-export function frontPatch(b: GeoBuilder, rings: Ring[], y: number, w: number, h: number, color: number, depth = 0.012, ink = true): void {
-  const p = tubePoint(rings, 0, y, depth * 0.3);
-  b.sphere(1, 8, 4, color, { at: p.pos, rot: alignZ(new THREE.Vector3(...p.n)), scale: [w, h, depth], smooth: true, ink });
+export function frontPatch(b: GeoBuilder, rings: Ring[], y: number, w: number, h: number, color: number, depth = 0.012, ink = false): void {
+  const p = tubePoint(rings, 0, y, -depth * 0.35);
+  // A soft rounded-rectangle patch (superellipse via a squashed, flattened box-ish sphere).
+  b.add(new THREE.CylinderGeometry(1, 1, 1, 12, 1), color, { at: p.pos, rot: alignY(new THREE.Vector3(...p.n)), scale: [w, depth, h], smooth: false, ink });
 }
 
 /** Two drawstrings hanging from the neckline (chest bone). */
@@ -488,14 +486,14 @@ export function collar(ctx: BodyCtx, color: number, tube = 0.016, open = 0): voi
   const nr = neckR(s);
   const y = s.shoulderY - s.chestY + s.armR * 1.0;
   const arc = Math.PI * 2 - open;
-  b.torus(nr * 1.25, tube, 3, 14, color, { at: [0, y, -0.004], rot: [Math.PI / 2, 0, Math.PI / 2 + open / 2], scale: [1, 0.95, 1], smooth: true }, arc);
+  b.torus(nr * 1.25, tube, 3, 14, color, { at: [0, y, -0.004], rot: [Math.PI / 2, 0, Math.PI / 2 + open / 2], scale: [1, 0.95, 1], smooth: true, ink: false }, arc);
 }
 
 /** Scrunchie on a forearm near the wrist (Addy: right wrist). */
 export function scrunchie(ctx: BodyCtx, sd: 1 | -1, color: number): void {
   const s = ctx.s;
   const b = ctx.sb.on(sd > 0 ? B.foreArmL : B.foreArmR);
-  b.torus(s.armR * 0.95, s.armR * 0.36, 5, 12, color, { at: [0, -s.foreArmL + 0.035, 0], rot: [Math.PI / 2, 0, 0], smooth: true, jitter: 0.0025, seed: 12 });
+  b.torus(s.armR * 0.95, s.armR * 0.36, 4, 10, color, { at: [0, -s.foreArmL + 0.035, 0], rot: [Math.PI / 2, 0, 0], smooth: true, jitter: 0.0025, seed: 12, ink: false });
 }
 
 /** Give torso rings a V opening: `top` rad at the neckline narrowing to `waist` at yWaist, then `hem` below it. */
@@ -516,6 +514,6 @@ export function edgeTrim(b: GeoBuilder, rings: Ring[], yMin: number, radius: num
     const pts = openEdge(rings.filter((r) => r.y >= yMin - 1e-4), side, lift);
     if (pts.length < 2) continue;
     const curve = new THREE.CatmullRomCurve3(pts);
-    b.add(new THREE.TubeGeometry(curve, Math.max(4, pts.length * 2), radius, 5, false), color, { smooth: true });
+    b.add(new THREE.TubeGeometry(curve, Math.max(4, Math.round(pts.length * 1.5)), radius, 4, false), color, { smooth: true, ink: false });
   }
 }

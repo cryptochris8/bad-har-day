@@ -190,7 +190,7 @@ export function buildBeds(): BedSet {
     group,
     bed: (id) => handles.get(id)!,
     update(dt) {
-      for (const f of tickers) f(dt);
+      for (let i = 0; i < tickers.length; i++) tickers[i]!(dt);
     },
     dispose() {
       for (const g of geos) g.dispose();

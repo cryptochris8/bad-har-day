@@ -114,6 +114,9 @@ export class UiController implements UiManager {
   private sizeCache: Size = { w: 1, h: 1 };
   private sizeFrame = 0;
   private touchPoll = 0;
+  private layoutT = 0;
+  private hudBottom = -99;
+  private portraitsBottom = -99;
   private lastGlyphKey = '';
   private observer: MutationObserver | null = null;
   private disposed = false;
@@ -365,6 +368,11 @@ export class UiController implements UiManager {
     }
     this.promptView.update(this.projector);
     this.toasts.update(d);
+    this.layoutT -= d;
+    if (this.layoutT <= 0) {
+      this.layoutT = 0.25;
+      this.measureLayout();
+    }
     if (this.device === 'touch') {
       this.touchPoll -= d;
       if (this.touchPoll <= 0) {
@@ -625,6 +633,25 @@ export class UiController implements UiManager {
       g.innerHTML = glyphHtml(slot, ctx);
       n.dataset.glyphKey = k;
     });
+  }
+
+  /**
+   * Publish where the top HUD column and the portrait row end (px from the layer top) as CSS variables,
+   * so the portrait row / instruction line can stack below them on any screen (cheap: 4× per second).
+   */
+  private measureLayout(): void {
+    if (this.layer.dataset.mode !== 'game') return;
+    const top = this.layer.getBoundingClientRect().top;
+    const hb = this.hud.visible ? Math.round(this.hud.leftColumn.getBoundingClientRect().bottom - top) : 0;
+    if (Math.abs(hb - this.hudBottom) >= 2) {
+      this.hudBottom = hb;
+      this.layer.style.setProperty('--bhd-hud-bottom', `${Math.max(0, hb)}px`);
+    }
+    const pb = this.portraitView.visible ? Math.round(this.portraitView.el.getBoundingClientRect().bottom - top) : 0;
+    if (Math.abs(pb - this.portraitsBottom) >= 2) {
+      this.portraitsBottom = pb;
+      this.layer.style.setProperty('--bhd-portraits-bottom', `${Math.max(0, pb)}px`);
+    }
   }
 
   private size(): Size {

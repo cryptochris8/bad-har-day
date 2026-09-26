@@ -201,6 +201,19 @@ switch (what) {
     void ui.boot();
     ready();
     break;
+  case 'splash':
+    // The static index.html splash block (exactly as shipped), shown on top.
+    void fetch('../index.html')
+      .then((r) => r.text())
+      .then((html) => {
+        const a = html.indexOf('<!-- BEGIN loading splash');
+        const b = html.indexOf('<!-- END loading splash -->');
+        const holder = document.createElement('div');
+        holder.innerHTML = html.slice(a, b); // trusted: our own index.html
+        document.body.appendChild(holder);
+        later(300, ready);
+      });
+    break;
   case 'title':
     ui.showScreen('title', data);
     ready();

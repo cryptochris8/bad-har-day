@@ -7,9 +7,10 @@
 //
 // Lifecycle: factory() → start(ctx) → update(dt, controls) every frame (dt = 0 while paused, controls neutral) →
 // when `done` becomes true the game calls result() then dispose(), removes `ctx.root` (disposeTree) and shows the
-// banner / ticks the task. An activity must restore anything it changed on shared objects (character poses/holds,
-// door states it opened are fine to leave, camera → ctx.camera.follow(...), walker.enabled = true, pointer.disable(),
-// ui.prompt(null), ui.instruction(null), ui.portraits(null), clear ui.activityLayer()).
+// banner / ticks the task. The game resets after dispose(): pointer, prompt, instruction, portraits, activity layer,
+// walker (enabled, speed), camera (follow Chris). The activity must restore character poses/holds it set on Chris
+// (setHold('none'), setPose('stand')) and anything it re-parented. World fixtures/doors/cars may be left as the story
+// needs them (a new morning resets the world).
 // Timing: each act has a hard end (ACTS in src/plan/types.ts). The clock is CAPPED at the act's end: once
 // ctx.clock.minutes ≥ act end − 1, wrap up gracefully (Mom arrives, the last item turns up, the school appears) —
 // never fail. Required story beats may keep going; the clock simply blinks at the cap.
@@ -149,6 +150,14 @@ export interface ActivityContext {
   readonly scene: THREE.Scene;
   /** Parent for this activity's own objects — disposed after the activity ends. */
   readonly root: THREE.Group;
+  /**
+   * Parent for objects that must OUTLIVE the activity (Ashley's finished coffee at 'ashleySpot', the packed
+   * lunchboxes…). Cleared when the morning ends. Name them so later activities can find them:
+   *   'ashleys-coffee' (a MugProp root)          — made by coffee, picked up by wake / rush
+   *   'lunchbox:addy' | 'lunchbox:ellie' | 'lunchbox:heidi' — made by lunch, used by rush
+   * Find with ctx.persist.getObjectByName(name).
+   */
+  readonly persist: THREE.Group;
   readonly world: World;
   readonly family: Family;
   readonly fx: Fx;

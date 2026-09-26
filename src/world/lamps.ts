@@ -9,13 +9,14 @@
 import * as THREE from 'three';
 import { PAL } from '../render/palette';
 import type { GeoBuilder } from '../render/models/builder';
-import { HOUSE, LAMPS, WALLS, type LampDef, type LampGroup } from './layout';
+import { HOUSE, LAMPS, WALLS, WALL_H, roomAt, roomBounds, type LampDef, type LampGroup } from './layout';
 import { MAX_SEGS, SQUASH_VERT, buildWithSeg, cutToonMaterial, cutDepthMaterial, type CutUniforms } from './cutMaterial';
 import type { LightingState } from './lighting';
 import type { Glows } from './kit';
 import type { WorldLighting } from './types';
 
 const GROUP_INDEX: Record<LampGroup, number> = { night: 0, house: 1, outdoor: 2 };
+const EXT_OFF = 0.12;
 
 /** Segment (wall id) a lamp is mounted on (0 = free standing). */
 export function lampSegment(l: LampDef): number {
@@ -67,12 +68,13 @@ void main() {
   ${SQUASH_VERT}
   vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
   float dist = length(mv.xyz);
-  mv.xyz += normalize(-mv.xyz) * min(0.25, dist * 0.3);
+  // pull toward the camera so the halo isn't clipped by its own lamp — but never through a wall (outdoor lamps)
+  mv.xyz += normalize(-mv.xyz) * (aGroup > 1.5 ? 0.04 : min(0.18, dist * 0.3));
   mv.xy += aCorner * aSize;
   gl_Position = projectionMatrix * mv;
   vUv = aCorner;
   float lv = aGroup < 0.5 ? uLevels.x : (aGroup < 1.5 ? uLevels.y : uLevels.z);
-  vK = lv * (0.94 + 0.06 * sin(uTime * 2.3 + position.x * 3.1));
+  vK = lv * (0.94 + 0.06 * sin(uTime * 2.3 + position.x * 3.1)) * smoothstep(0.8, 4.5, dist);
 }`;
 const HALO_FRAG = /* glsl */ `
 uniform vec3 uColor;
@@ -80,7 +82,7 @@ varying vec2 vUv;
 varying float vK;
 void main() {
   float r = length(vUv);
-  float a = pow(max(0.0, 1.0 - r), 2.2) * vK;
+  float a = pow(max(0.0, 1.0 - r), 3.0) * vK * 0.38;
   if (a < 0.004) discard;
   gl_FragColor = vec4(uColor * a, 1.0);
   #include <colorspace_fragment>
@@ -100,7 +102,9 @@ void main() {
   vec3 transformed = position;
   ${SQUASH_VERT}
   vUv = aUv;
-  vK = aGroup < 0.5 ? uLevels.x : (aGroup < 1.5 ? uLevels.y : uLevels.z);
+  float gi = mod(aGroup, 3.0);
+  vK = gi < 0.5 ? uLevels.x : (gi < 1.5 ? uLevels.y : uLevels.z);
+  if (aGroup > 2.5) vK *= 0.36;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
 }`;
 const POOL_FRAG = /* glsl */ `
@@ -109,7 +113,7 @@ varying vec2 vUv;
 varying float vK;
 void main() {
   float r = length(vUv);
-  float a = pow(max(0.0, 1.0 - r), 1.8) * vK * 0.55;
+  float a = pow(max(0.0, 1.0 - r), 2.2) * vK * 0.34;
   if (a < 0.003) discard;
   gl_FragColor = vec4(uColor * a, 1.0);
   #include <colorspace_fragment>
@@ -157,6 +161,9 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
   // Night "shadow roof": invisible, casts the house's shadow so moonlight stays outside.
   const roofGeo = new THREE.BoxGeometry(HOUSE.x1 - HOUSE.x0 + 0.1, 1.75, HOUSE.z1 - HOUSE.z0 + 0.1);
   const roofMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+  // three renders back faces into shadow maps by default — that would record the box's BOTTOM (y ≈ 0.95) and leave
+  // everything above it moonlit. Front faces record the top, so the whole interior is in the roof's shadow.
+  roofMat.shadowSide = THREE.FrontSide;
   disposables.push(roofGeo, roofMat);
   const roof = new THREE.Mesh(roofGeo, roofMat);
   roof.name = 'shadowRoof';
@@ -244,18 +251,12 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
     const uv: number[] = [];
     const grp: number[] = [];
     const seg: number[] = [];
-    const quad = (p: [number, number, number][], g: number, s: number) => {
-      const U = [
-        [-1, -1],
-        [1, -1],
-        [1, 1],
-        [-1, 1],
-      ];
+    const quadUv = (p: [number, number, number][], u: [number, number][], g: number, sg: number) => {
       for (const k of [0, 1, 2, 0, 2, 3]) {
         pos.push(...p[k]!);
-        uv.push(U[k]![0]!, U[k]![1]!);
-        grp.push(g);
-        seg.push(s);
+        uv.push(u[k]![0]! * 1.0, u[k]![1]! * 1.0);
+        grp.push(g + 3); // wall pools: dimmer (group index + 3)
+        seg.push(sg);
       }
     };
     for (const l of LAMPS) {
@@ -263,28 +264,68 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
       const g = GROUP_INDEX[l.group];
       const r = l.pool;
       const y = 0.016;
-      // floor pool (CCW from above → faces +Y)
-      quad(
-        [
-          [l.x - r, y, l.z + r],
-          [l.x + r, y, l.z + r],
-          [l.x + r, y, l.z - r],
-          [l.x - r, y, l.z - r],
-        ],
-        g,
-        0,
-      );
+      // outdoor wall lamps: push the pool away from the house so it never shows through the wall
+      let px = l.x;
+      let pz = l.z;
+      if (l.group === 'outdoor') {
+        if (Math.abs(l.x - HOUSE.x1) < 0.4) px = HOUSE.x1 + EXT_OFF + r * 0.8;
+        else if (Math.abs(l.z - HOUSE.z1) < 0.4) pz = HOUSE.z1 + EXT_OFF + r * 0.8;
+      }
+      // floor pool (CCW from above → faces +Y), clipped to the lamp's room so it never leaks through walls
+      let x0 = px - r;
+      let x1 = px + r;
+      let z0 = pz - r;
+      let z1 = pz + r;
+      const lroom = roomAt(l.x, l.z);
+      if (lroom && l.group !== 'outdoor') {
+        const b = roomBounds(lroom);
+        const inset = 0.07;
+        x0 = Math.max(x0, b.x0 + inset);
+        x1 = Math.min(x1, b.x1 - inset);
+        z0 = Math.max(z0, b.z0 + inset);
+        z1 = Math.min(z1, b.z1 - inset);
+      }
+      if (x1 > x0 && z1 > z0) {
+        const u = (x: number) => (x - px) / r;
+        const v = (z: number) => (z - pz) / r;
+        quadUv(
+          [
+            [x0, y, z1],
+            [x1, y, z1],
+            [x1, y, z0],
+            [x0, y, z0],
+          ],
+          [
+            [u(x0), v(z1)],
+            [u(x1), v(z1)],
+            [u(x1), v(z0)],
+            [u(x0), v(z0)],
+          ],
+          g - 3,
+          0,
+        );
+      }
       const wb = l.wall === 'z+' ? wallBehind(l) : null;
       if (wb) {
-        const wr = r * 0.8;
+        const wr = r * 0.6;
         const z = wb.face + 0.012;
-        const cy = Math.max(l.y, wr * 0.5);
-        quad(
+        const cy = l.y;
+        const y0 = Math.max(0.02, cy - wr);
+        const y1 = Math.min(WALL_H - 0.04, cy + wr);
+        const v0 = (y0 - cy) / wr;
+        const v1 = (y1 - cy) / wr;
+        quadUv(
           [
-            [l.x - wr, cy - wr, z],
-            [l.x + wr, cy - wr, z],
-            [l.x + wr, cy + wr, z],
-            [l.x - wr, cy + wr, z],
+            [l.x - wr, y0, z],
+            [l.x + wr, y0, z],
+            [l.x + wr, y1, z],
+            [l.x - wr, y1, z],
+          ],
+          [
+            [-1, v0],
+            [1, v0],
+            [1, v1],
+            [-1, v1],
           ],
           g,
           wb.id,
@@ -321,12 +362,24 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
   const POINTS = quality === 'high' ? 3 : 0;
   const points: THREE.PointLight[] = [];
   for (let i = 0; i < POINTS; i++) {
-    const p = new THREE.PointLight(PAL.lampWarm, 0, 5.5, 1.6);
+    const p = new THREE.PointLight(PAL.lampWarm, 0, 3.4, 1.8);
     p.castShadow = false;
     points.push(p);
     group.add(p);
   }
-  const candidates = LAMPS.map((l, i) => ({ l, i })).filter((c) => c.l.point > 0);
+  // point-light positions: above/in front of the lamp but kept ≥ 0.9 m from the room's walls (no hot spots)
+  const candidates = LAMPS.map((l, i) => {
+    const room = roomAt(l.x, l.z);
+    let px = l.x;
+    let pz = l.z + 0.6;
+    if (room) {
+      const b = roomBounds(room);
+      const m = 0.9;
+      px = Math.min(Math.max(px, b.x0 + m), b.x1 - m);
+      pz = Math.min(Math.max(pz, b.z0 + m), b.z1 - m);
+    }
+    return { l, i, px, py: Math.max(0.9, l.y + 0.35), pz, room };
+  }).filter((c) => c.l.point > 0);
   const pick = new Int32Array(POINTS + 1);
   const pickD = new Float64Array(POINTS + 1);
   const lampLevel = new Float32Array(3);
@@ -368,10 +421,13 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
     update(dt: number, fx: number, fz: number) {
       time.value += dt;
       if (POINTS === 0) return;
-      // choose the nearest lit lamps to the focus (insertion sort into a tiny array)
+      // choose the nearest lit lamps IN THE FOCUS ROOM (point lights have no shadows: never light other rooms)
+      const focusRoom = roomAt(fx, fz);
       let n = 0;
       for (let c = 0; c < candidates.length; c++) {
-        const { l } = candidates[c]!;
+        const cand = candidates[c]!;
+        if (cand.room !== focusRoom) continue;
+        const l = cand.l;
         const lv = lampLevel[GROUP_INDEX[l.group]]!;
         if (lv < 0.04) continue;
         const d = (l.x - fx) * (l.x - fx) + (l.z - fz) * (l.z - fz);
@@ -394,10 +450,11 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
           p.intensity = 0;
           continue;
         }
-        const { l } = candidates[pick[i]!]!;
+        const cand = candidates[pick[i]!]!;
+        const l = cand.l;
         const lv = lampLevel[GROUP_INDEX[l.group]]!;
-        p.position.set(l.x, Math.max(0.6, l.y - 0.1), l.z + 0.25);
-        p.intensity = l.point * lv;
+        p.position.set(cand.px, cand.py, cand.pz);
+        p.intensity = l.point * lv * 0.42;
       }
     },
     dispose() {

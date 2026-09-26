@@ -60,7 +60,7 @@ export type AnchorId =
   | 'masterBedAshley' // lie pose on Ashley's side
   | 'bedAddy'
   | 'bedEllie'
-  | 'bedHeidi' // lie poses in the girls' beds
+  | 'bedHeidi' // the SLEEPER'S FEET in the girls' beds (yaw = head toward −Z local); use layInBed() (src/game/morning.ts)
   | 'bedsideAddy'
   | 'bedsideEllie'
   | 'bedsideHeidi' // where Chris stands to wake each girl (facing the bed)
@@ -206,7 +206,7 @@ export interface CarHandle {
   readonly root: THREE.Group;
   /** Door open amount 0..1 per door: 0 driver, 1 passenger, 2 sliding (girls' side), 3 trunk. */
   setDoor(door: 0 | 1 | 2 | 3, open: number): void;
-  /** Wheels spin by distance travelled (m); steer angle (rad) turns the front wheels. */
+  /** Wheels spin by the distance moved SINCE THE LAST CALL (m); steer angle (rad) turns the front wheels. */
   roll(distance: number, steer: number): void;
   setBrakeLights(on: boolean): void;
   setHeadlights(on: boolean): void;

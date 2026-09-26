@@ -32,22 +32,21 @@ export interface TubeRec {
   readonly sides: number;
 }
 
-const cosTab = new Map<number, Float32Array>();
-const sinTab = new Map<number, Float32Array>();
+const tables = new Map<number, { cos: Float32Array; sin: Float32Array }>();
+/** Cached cos/sin of the cross-section angles (the returned object is shared — don't mutate). */
 export function ringTables(sides: number): { cos: Float32Array; sin: Float32Array } {
-  let c = cosTab.get(sides);
-  let s = sinTab.get(sides);
-  if (!c || !s) {
-    c = new Float32Array(sides);
-    s = new Float32Array(sides);
+  let t = tables.get(sides);
+  if (!t) {
+    const c = new Float32Array(sides);
+    const s = new Float32Array(sides);
     for (let j = 0; j < sides; j++) {
       c[j] = Math.cos((j / sides) * Math.PI * 2);
       s[j] = Math.sin((j / sides) * Math.PI * 2);
     }
-    cosTab.set(sides, c);
-    sinTab.set(sides, s);
+    t = { cos: c, sin: s };
+    tables.set(sides, t);
   }
-  return { cos: c, sin: s };
+  return t;
 }
 
 /** Vertices a tube needs (rings × sides + the tip point). */
@@ -325,7 +324,7 @@ export function writeTube(
       let nx = sx * c * (iw || 1) + ox * s * (id || 1);
       let ny = sy * c * (iw || 1) + oy * s * (id || 1);
       let nz = sz * c * (iw || 1) + oz * s * (id || 1);
-      const nl = Math.hypot(nx, ny, nz) || 1;
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
       nx /= nl;
       ny /= nl;
       nz /= nl;

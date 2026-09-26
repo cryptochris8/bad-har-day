@@ -206,7 +206,8 @@ export class ActCardView extends TimedCard {
       // Point the alarm clock's hands at the card's time.
       const h = Number(m[1]) % 12;
       const mins = Number(m[2]);
-      this.el.querySelector('.bhd-alarm__h')?.setAttribute('transform', `rotate(${((h + mins / 60) * 30 - 60).toFixed(1)} 60 66)`);
+      // The hour hand is drawn pointing at ~4 o'clock (119.7° from 12), the minute hand at 12.
+      this.el.querySelector('.bhd-alarm__h')?.setAttribute('transform', `rotate(${((h + mins / 60) * 30 - 119.7).toFixed(1)} 60 66)`);
       this.el.querySelector('.bhd-alarm__m')?.setAttribute('transform', `rotate(${mins * 6} 60 66)`);
     } else {
       this.flip.appendChild(el('span', { class: 'bhd-flip__raw', text: card.time }));

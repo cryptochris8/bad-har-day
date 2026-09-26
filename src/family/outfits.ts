@@ -86,7 +86,8 @@ interface TopOpts {
 }
 
 function top(ctx: BodyCtx, o: TopOpts): { b: ReturnType<SkinBuilder['blend']>; rings: ReturnType<typeof torsoRings> } {
-  let rings = torsoRings(ctx.s, o.loose ?? 1.04, o.hemY, o.flare ?? 0);
+  // A little hem flare keeps tops clear of the trousers underneath (no z-fighting at the hem).
+  let rings = torsoRings(ctx.s, o.loose ?? 1.04, o.hemY, o.flare ?? 0.035);
   if (o.v) rings = vOpen(rings, ctx.s.spineY + (o.vWaist ?? 0), o.v[0], o.v[1], o.v[2]);
   const b = torsoTube(ctx, rings, o.color, { phi0: o.phi0, phiLen: o.phiLen });
   if (o.hemBand) band(b, rings, rings[0]!.y, rings[0]!.y + 0.03, o.hemBand, 0.004, ctx.low ? 9 : 12, true, o.phi0, o.phiLen);
@@ -132,9 +133,14 @@ function chris(ctx: BodyCtx, outfit: Outfit): void {
   const day = outfit === 'day';
   pelvis(ctx, day ? PAL.jeansDark : PAL.chrisJoggers);
   const t = top(ctx, { color: hoodie, loose: 1.07, hemY: hem, flare: 0.02, hemBand: rib });
-  frontPatch(t.b, t.rings, s.spineY - 0.035, s.waistW * 0.62, 0.068, shadeHex(hoodie, 0.9), 0.016);
+  frontPatch(t.b, t.rings, s.spineY - 0.035, s.waistW * 0.6, 0.06, mixHex(hoodie, 0xffffff, 0.08), 0.012);
   hood(ctx, hoodie, shadeHex(hoodie, 0.7), day ? 1.1 : 1);
   drawstrings(ctx, PAL.hoodieString, 0.13);
+  // Wristwatch on his left wrist (checkWatch).
+  const hw = ctx.sb.on(B.handL);
+  hw.torus(s.armR * 0.72, 0.008, 3, 10, PAL.glassesFrame, { at: [0, -0.004, 0], rot: [Math.PI / 2, 0, 0], ink: false });
+  hw.cyl(0.017, 0.017, 0.008, 8, PAL.goldTrim, { at: [s.armR * 0.72, -0.004, 0], rot: [0, 0, Math.PI / 2], ink: false });
+  hw.cyl(0.013, 0.013, 0.009, 8, PAL.mugBody, { at: [s.armR * 0.74, -0.004, 0], rot: [0, 0, Math.PI / 2], ink: false });
   if (!day) {
     arms(ctx, { color: hoodie, width: 1.14, length: 'wrist', cuff: rib });
     legs(ctx, { color: PAL.chrisJoggers, width: 1.12, cuff: shadeHex(PAL.chrisJoggers, 0.84) });
@@ -230,7 +236,7 @@ function pjSet(ctx: BodyCtx, main: number, deco: { kind: 'dot' | 'star' | 'strip
   if (deco.kind === 'stripe') stripes(t.b, t.rings, deco.color, y0, y1, 5, 0.016, 12);
   else print(t.b, t.rings, deco.kind, deco.color, deco.kind === 'star' ? size * 1.25 : size, y0, y1, 4, 8, main & 0xff);
   collar(ctx, trim, 0.014);
-  const legPrint = deco.kind === 'stripe' ? null : { kind: deco.kind, color: deco.color, size: deco.kind === 'star' ? size * 1.2 : size * 0.95, rows: 4, perRow: 5 };
+  const legPrint = deco.kind === 'stripe' ? null : { kind: deco.kind, color: deco.color, size: deco.kind === 'star' ? size * 1.2 : size * 0.95, rows: 3, perRow: 5 };
   legs(ctx, { color: main, width: 1.16, cuff: trim, print: legPrint, stripes: deco.kind === 'stripe' ? { color: deco.color, count: 4 } : null });
   arms(ctx, {
     color: main,
@@ -253,7 +259,7 @@ function addy(ctx: BodyCtx, outfit: Outfit): void {
     const rib = shadeHex(hoodieC, 0.84);
     pelvis(ctx, PAL.leggingPlum);
     const t = top(ctx, { color: hoodieC, loose: 1.08, hemY: hipJ(s) + 0.005, flare: 0.03, hemBand: rib });
-    frontPatch(t.b, t.rings, s.spineY - 0.02, s.waistW * 0.62, 0.05, shadeHex(hoodieC, 0.9), 0.014);
+    frontPatch(t.b, t.rings, s.spineY - 0.02, s.waistW * 0.6, 0.045, mixHex(hoodieC, 0xffffff, 0.1), 0.01);
     hood(ctx, hoodieC, PAL.addyMain, 1);
     drawstrings(ctx, PAL.hoodieString, 0.09);
     skirt(ctx, s.spineY - 0.035, hipJ(s) - s.thighL * 0.42, s.waistW * 1.12, s.waistD * 1.14, s.hipW * 1.34, s.hipD * 1.28, PAL.denim, 0.7);
@@ -291,8 +297,8 @@ function ellie(ctx: BodyCtx, outfit: Outfit): void {
   const shortsTop = torsoRings(s, 1.06).filter((r) => r.y <= s.spineY + 0.035);
   waist.add(ringTube([...shortsTop.slice(1), { y: s.spineY + 0.035, w: s.waistW * 1.07, d: s.waistD * 1.08 }], 14), denim, { smooth: true });
   const bibRings = torsoRings(s, 1.06);
-  frontPatch(waist, bibRings, s.chestY - 0.02, s.torsoW * 0.55, 0.075, denim, 0.012);
-  frontPatch(waist, bibRings, s.chestY - 0.04, s.torsoW * 0.26, 0.028, shadeHex(denim, 0.88), 0.016, false);
+  frontPatch(waist, bibRings, s.chestY - 0.02, s.torsoW * 0.55, 0.075, denim, 0.012, true);
+  frontPatch(waist, bibRings, s.chestY - 0.035, s.torsoW * 0.26, 0.026, mixHex(denim, 0xffffff, 0.12), 0.016, false);
   // Straps over the shoulders + buckles.
   const ch = ctx.sb.on(B.chest);
   for (const sd of [-1, 1]) {

@@ -66,9 +66,11 @@ export type Outfit = 'sleep' | 'day';
  *  - 'lie'   : lying in bed — see LIE CONVENTION below.
  *  - 'kneel' : kneeling on one knee (looking under the couch, tying shoes).
  *  - 'drive' : seated with both hands on an (imaginary) wheel in front — the car adds the wheel.
- * LIE CONVENTION: with pose 'lie' the character lies on its back along its local Z axis with the HEAD at local
- * −Z (toward the headboard when the root yaw points the feet to the foot of the bed) and the body resting at
- * height `seatHeight` (mattress top). Bed anchors give the root position + yaw for this.
+ * LIE CONVENTION: with pose 'lie' the character lies on its back along its local Z axis, the body CENTRED on the
+ * root: head top at local z = −height/2 (toward the headboard), soles at +height/2, back resting at `seatHeight`
+ * (mattress top). `side: +1` lies on her left side facing +X. Bed anchors give the root position + yaw for this.
+ * SIT: the hips go on the seat BEHIND the root (the root is the seat's front edge on the floor).
+ * DRIVE: the hands grip `wheelGrip(spec)` (src/family/anim.ts) — the car places its wheel there.
  */
 export type Pose = 'stand' | 'sit' | 'lie' | 'kneel' | 'drive';
 
@@ -149,7 +151,9 @@ export type Expression =
 export type Emote = 'exclaim' | 'question' | 'heart' | 'zzz' | 'sweat' | 'sparkle' | 'music' | 'shh' | 'idea' | 'check' | 'star' | 'huff';
 
 export type SocketName =
-  | 'handR' // palm centre, fingers toward local +Y… props attach with their own origin at the grip
+  // Hand sockets sit at the mitten centre and stay upright in the BODY frame (+Y up, +Z forward) — a prop parented
+  // there (at −prop.grip.position) stands upright in the hand; actions tilt them (e.g. 'sip' tips the mug).
+  | 'handR' // right hand (at −X when facing +Z)
   | 'handL'
   | 'head' // head centre (hair and hats attach here; head space: +Y up, +Z face forward)
   | 'back' // between the shoulder blades on the back surface (backpacks)

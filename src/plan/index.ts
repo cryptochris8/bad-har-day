@@ -4,7 +4,7 @@ import { GIRLS, type GirlId } from '../family/types';
 import type { BrushKind } from '../hair/types';
 import { FOOD_CATEGORY, type FoodKind, type ItemKind } from '../props/types';
 import type { HideSpotId } from '../world/types';
-import type { ChoreId, DayPlan, DogQuirk, DriveEvent, GirlHairPlan, HairCondition, MissingItem, WakeStyle, Weather } from './types';
+import type { ChoreId, CoffeeOrder, DayPlan, DogQuirk, DriveEvent, GirlHairPlan, HairCondition, MissingItem, WakeStyle, Weather } from './types';
 
 export * from './types';
 export { buildReport, gradeFor, pickAwards, type ReportInput } from './report';
@@ -64,6 +64,8 @@ function hairPlan(rng: Rng, weather: Weather): GirlHairPlan {
 export interface PlanOpts {
   daily?: boolean;
   dateKey?: string | null;
+  /** Ashley's coffee order from FAMILY SETUP (default 'splash'). */
+  coffeeOrder?: CoffeeOrder;
 }
 
 export function generatePlan(seed: number, opts: PlanOpts = {}): DayPlan {
@@ -121,5 +123,6 @@ export function generatePlan(seed: number, opts: PlanOpts = {}): DayPlan {
     missing,
     drive: driveOrdered,
     cosmeticSeed: rng.int(1, 0x7fffffff),
+    coffeeOrder: opts.coffeeOrder ?? 'splash',
   };
 }

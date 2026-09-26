@@ -98,8 +98,19 @@ export function roomAt(x: number, z: number): RoomId | null {
   return null;
 }
 
-/** Bounding rect of a room (union of its rects). */
+const BOUNDS_CACHE = new Map<RoomId, Rect>();
+
+/** Bounding rect of a room (union of its rects). Cached — never mutate the result. */
 export function roomBounds(id: RoomId): Rect {
+  let c = BOUNDS_CACHE.get(id);
+  if (!c) {
+    c = computeRoomBounds(id);
+    BOUNDS_CACHE.set(id, c);
+  }
+  return c;
+}
+
+function computeRoomBounds(id: RoomId): Rect {
   const r = roomDef(id);
   let x0 = Infinity;
   let z0 = Infinity;
@@ -319,6 +330,7 @@ export const FURN = {
   tvConsole: F(rect(EAST_IN - 0.45, 1.1, EAST_IN, 3.1), 0.55),
   armchair: F(box(6.6, 2.5, 0.9, 0.85), 0.85),
   sideTable: Fc(5.85, 3.15, 0.22, 0.55),
+  pouf: Fc(5.2, 1.45, 0.26, 0.36),
   livingPlantA: Fc(5.38, -0.18, 0.26, 1.35),
   livingPlantB: Fc(8.5, 4.0, 0.26, 1.1),
   bookcase: F(rect(EAST_IN - 0.36, -0.53, EAST_IN, 0.55), 1.7),
@@ -512,14 +524,14 @@ const H = (id: HideSpotId, stand: Anchor, ix: number, iy: number, iz: number, la
 export const HIDE_SPOTS: readonly HideSpotDef[] = [
   H('couchCushion', A(2.85, 0.98, PI, 'living'), 2.85, COUCH_SEAT_H - 0.04, -0.05, 'under the couch cushion'),
   H('dogBed', A(4.25, 1.02, PI, 'living'), 4.35, 0.14, 0.18, 'in the dog bed'),
-  H('bathCounter', A(2.2, -5.35, PI, 'bath'), 1.98, VANITY_H + 0.01, -6.08, 'on the bathroom counter'),
+  H('bathCounter', A(2.2, -5.35, PI, 'bath'), 1.58, VANITY_H + 0.01, -5.98, 'on the bathroom counter'),
   H('twinsFloor', A(-2.62, -3.45, -PI / 2, 'twins'), -3.3, 0.02, -3.45, "on Addy & Ellie's rug"),
   H('heidiFloor', A(-6.35, -3.55, -PI / 2, 'heidi'), -7.05, 0.02, -3.55, "on Heidi's floor"),
-  H('kitchenTable', A(5.84, -1.45, PI, 'kitchen'), 5.6, TABLE_H + 0.01, -2.25, 'on the kitchen table'),
+  H('kitchenTable', A(5.3, -1.45, PI, 'kitchen'), 5.2, TABLE_H + 0.01, -2.15, 'on the kitchen table'),
   H('yardGrass', A(13.2, -7.9, PI, 'yard'), 13.2, 0.03, -8.6, 'in the backyard grass'),
   H('masterChair', A(-5.18, 3.62, PI / 2, 'master'), -4.3, 0.47, 3.62, 'on the bedroom chair'),
   H('hallBasket', A(-7.78, -1.4, -PI / 2, 'hall'), -8.5, 0.3, -1.4, 'in the laundry basket'),
-  H('entryBench', A(-2.1, 0.5, PI, 'entry'), -2.1, 0.47, -0.3, 'on the shoe bench'),
+  H('entryBench', A(-2.1, 0.5, PI, 'entry'), -2.1, 0.5, -0.3, 'on the shoe bench'),
   H('laundryPile', A(-7.45, 3.75, -PI / 2, 'master'), -8.3, 0.2, 3.95, 'in the laundry pile'),
   H('underTwinsBed', A(-2.5, -4.25, PI / 2, 'twins'), -1.6, 0.06, -4.75, "under Ellie's bed"),
 ];
@@ -548,24 +560,24 @@ const L = (x: number, y: number, z: number, group: LampGroup, pool: number, poin
 
 export const LAMPS: readonly LampDef[] = [
   // master bedside lamps (Chris's side glows at 5:15)
-  L(-5.28, 0.95, -0.3, 'night', 1.9, 5, 0.5, 'z+'),
-  L(-7.62, 0.95, -0.3, 'house', 1.7, 4, 0.45, 'z+'),
+  L(-5.28, 0.95, -0.3, 'night', 1.9, 5, 0.34, 'z+'),
+  L(-7.62, 0.95, -0.3, 'house', 1.7, 4, 0.32, 'z+'),
   // living floor lamp
-  L(0.78, 1.5, -0.18, 'night', 2.4, 7, 0.6, 'z+'),
+  L(0.78, 1.5, -0.18, 'night', 2.4, 7, 0.4, 'z+'),
   // kitchen: under-cabinet glow + stove hood light
-  L(4.39, 1.42, -6.15, 'night', 2.2, 6, 0.55, 'z+'),
+  L(4.39, 1.42, -6.15, 'night', 2.2, 5, 0.3, 'z+'),
   L(2.95, 1.62, -3.7, 'house', 1.6, 0, 0.4),
-  L(7.85, 1.42, -6.15, 'house', 1.6, 4, 0.45, 'z+'),
+  L(7.85, 1.42, -6.15, 'house', 1.6, 4, 0.28, 'z+'),
   // hall night light
   L(-2.4, 0.3, -0.72, 'night', 1.2, 2.5, 0.3),
   // entry sconce
   L(-3.0, 1.9, -0.55, 'house', 1.6, 4, 0.45, 'z+'),
   // twins: star lamp on the nightstand + (string lights are decorative)
-  L(-3.2, 0.72, -6.2, 'night', 1.6, 3.5, 0.4, 'z+'),
+  L(-3.2, 0.72, -6.2, 'night', 1.6, 2.2, 0.3, 'z+'),
   // heidi: night light
-  L(-5.75, 1.05, -6.2, 'night', 1.5, 3, 0.4, 'z+'),
+  L(-5.75, 1.05, -6.2, 'night', 1.5, 2.2, 0.3, 'z+'),
   // bath vanity bar
-  L(0.9, 2.12, -6.28, 'house', 2.0, 5, 0.6, 'z+'),
+  L(0.9, 2.12, -6.28, 'house', 1.3, 4, 0.22, 'z+'),
   // porch lights + back door light
   L(-2.55, 1.95, 4.68, 'outdoor', 1.8, 0, 0.55),
   L(9.14, 2.0, -3.75, 'outdoor', 1.8, 0, 0.5),

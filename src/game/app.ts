@@ -23,7 +23,7 @@ import { detectPlatform, renderDpr, type PlatformInfo } from './device';
 import { Fader } from './fade';
 import { FullscreenController } from './fullscreen';
 import { InteractionsImpl } from './interactions';
-import { Morning, MATTRESS_H } from './morning';
+import { Morning, layInBed, resetWorldState } from './morning';
 import { NpcsImpl } from './npcs';
 import { PointerImpl } from './pointer';
 import { installViewport } from './viewport';
@@ -163,16 +163,15 @@ export class App {
   /** Title/menu backdrop: 5:15 AM, everybody asleep, a slow drift over the dollhouse. */
   private attractScene(): void {
     this.clock = new GameClockImpl(315);
+    resetWorldState(this.world);
     this.world.setClock(315);
     this.world.setWeather('clear');
     for (const id of ['ashley', 'addy', 'ellie', 'heidi'] as const) {
       const c = this.family.member(id);
       const a = this.world.anchor(id === 'ashley' ? 'masterBedAshley' : id === 'addy' ? 'bedAddy' : id === 'ellie' ? 'bedEllie' : 'bedHeidi');
       this.npcs.release(c);
-      c.root.position.set(a.x, a.y, a.z);
-      c.root.rotation.y = a.yaw;
       c.setOutfit('sleep');
-      c.setPose('lie', { seatHeight: MATTRESS_H, side: id === 'heidi' ? 1 : 0.4 });
+      layInBed(c, a, id === 'heidi' ? 1 : 0.4);
       c.setExpression('asleep');
       c.emote('zzz');
       c.hair?.setBedhead(1);
@@ -181,10 +180,8 @@ export class App {
     const chris = this.family.chris;
     const cb = this.world.anchor('masterBedChris');
     this.npcs.release(chris);
-    chris.root.position.set(cb.x, cb.y, cb.z);
-    chris.root.rotation.y = cb.yaw;
     chris.setOutfit('sleep');
-    chris.setPose('lie', { seatHeight: MATTRESS_H, side: -0.5 });
+    layInBed(chris, cb, -0.5);
     chris.setExpression('asleep');
     this.npcs.placeAt(this.family.dog, 'dogBed');
     this.family.dog.setPose('sleep');
@@ -226,7 +223,7 @@ export class App {
     this.morning?.dispose();
     const today = dateKeyOf(new Date());
     const seed = opts.daily ? dailySeed(today) : (opts.seed ?? (Math.floor(Math.random() * 0x7fffffff) ^ Date.now()) >>> 0);
-    const plan = generatePlan(seed, { daily: !!opts.daily, dateKey: opts.daily ? today : null });
+    const plan = generatePlan(seed, { daily: !!opts.daily, dateKey: opts.daily ? today : null, coffeeOrder: this.save.data.family.coffee });
     this.clock = new GameClockImpl(315);
     this.ui.showScreen('none');
     this.screen = 'playing';
@@ -373,11 +370,14 @@ export class App {
     this.input.update(dt);
     const actions = this.input.getMenuActions();
     const clicks = this.ui.takeClicks();
-    if (actions.includes('mute')) {
+    const m = this.morning;
+    // Mute: in menus the UI handles 'mute' itself (settings patch + toast); during live gameplay the UI never sees
+    // the menu actions, so the app toggles it here.
+    if (actions.includes('mute') && this.screen === 'playing' && m && m.inputMode === 'gameplay') {
       this.save.setSettings({ muted: !this.save.data.settings.muted });
       this.applySettings(this.save.data.settings);
+      this.ui.toast(this.save.data.settings.muted ? 'Sound off' : 'Sound on', 'music', 1.2);
     }
-    const m = this.morning;
     if (this.screen === 'playing' && m) {
       if (actions.includes('pause') || clicks.includes('pause')) this.pause();
       else if (m.inputMode === 'menu') this.ui.handleMenuActions(actions);
