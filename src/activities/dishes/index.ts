@@ -15,7 +15,7 @@ import { makeDish, type DishProp } from '../../props';
 import type { DishKind } from '../../props/types';
 import { PAL } from '../../render/palette';
 import { FlickDetector, approach, swipeDir, yawToward, type Dir } from '../station/logic';
-import { PointerRay, Shot, StationChris, Tweens, say, shortScreen } from '../station/runtime';
+import { PointerRay, Shot, StationChris, Tweens, narrowPortrait, say, shortScreen } from '../station/runtime';
 import { ARROW_SVG, StationUi, glyph, h, type WorldTag } from '../station/ui';
 import { exposeStation } from '../station/debug';
 import { DishTally, ZONE_LABEL, ZONE_OF, ZONE_SUB, buildQueue, clinkPitch, dishesStars, rackSlot, wrongHint, zoneForDir, type DishSpec, type DishZone } from './logic';
@@ -124,7 +124,7 @@ class DishesActivity implements Activity {
     const sz = a.z - 0.1;
     this.chris.goTo(sx, sz, yawToward(sx, sz, this.basinAt.x, this.basinAt.z));
     const tx = (this.basinAt.x + dw.x) / 2 + 0.16;
-    this.shot.look(tx, 0.64, dw.z + 0.15, -0.3, 1.32, 2.5, 42).apply(ctx, 2.6);
+    this.shot.look(tx, 0.64, dw.z + 0.15, -0.3, 1.32, 2.5, 42).portrait({ zoom: 0.8, lift: 0.2, left: 0 }).apply(ctx, 2.6);
 
     this.buildDom(ctx);
     this.doorTarget = 1;
@@ -133,9 +133,11 @@ class DishesActivity implements Activity {
       this.racksTarget = 1;
       ctx.audio.play('dishClink', { volume: 0.4, pitch: 0.8 });
     });
-    ctx.hud.objective = shortScreen(ctx) ? '' : 'Plates below, cups on top, cutlery in the basket.';
-    if (shortScreen(ctx)) ctx.hud.tasks = [];
-    ctx.hud.meters = [{ id: 'dishes', label: 'Dishes', value: 0, color: 'var(--bhd-sky)', icon: 'dishes' }];
+    const compact = shortScreen(ctx) || narrowPortrait(ctx);
+    ctx.hud.objective = compact ? '' : 'Plates below, cups on top, cutlery in the basket.';
+    if (compact) ctx.hud.tasks = [];
+    // Short / portrait phones: the side card's "3 / 9" carries progress; the HUD meter would sit on the instruction.
+    ctx.hud.meters = shortScreen(ctx) || narrowPortrait(ctx) ? null : [{ id: 'dishes', label: 'Dishes', value: 0, color: 'var(--bhd-sky)', icon: 'dishes' }];
     ctx.ui.instruction('Load the dishwasher!', '◀ bottom rack · ▲ top rack · basket ▶');
     exposeStation({ id: 'dishes', phase: () => this.phase, info: () => this.info() });
   }
@@ -210,6 +212,7 @@ class DishesActivity implements Activity {
   private step(ctx: ActivityContext, dt: number, c: GameControls): void {
     this.phaseT += dt;
     this.tweens.update(dt);
+    this.shot.refresh(ctx);
     for (let i = this.beats.length - 1; i >= 0; i--) {
       const b = this.beats[i]!;
       b.left -= dt;

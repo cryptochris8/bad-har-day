@@ -217,6 +217,15 @@ function rel(s: BodySpec, side: 0 | 1, mx: number, my: number, mz: number, out: 
 }
 const _r: [number, number, number] = [0, 0, 0];
 
+/** Head-relative point with the head pitched by `pitch` (head bone rotation.x) → arm target. */
+function headTargetPitched(s: BodySpec, side: 0 | 1, hx: number, hy: number, hz: number, pitch: number): [number, number, number] {
+  const y = s.headCY + hy;
+  const z = s.headCZ + hz;
+  const c = Math.cos(pitch);
+  const sn = Math.sin(pitch);
+  return rel(s, side, hx, s.neckY + y * c - z * sn, y * sn + z * c, _r);
+}
+
 /** Head-relative point (head space offsets) → arm target. */
 function headTarget(s: BodySpec, side: 0 | 1, hx: number, hy: number, hz: number): [number, number, number] {
   return rel(s, side, hx, s.neckY + s.headCY + hy, s.headCZ + hz, _r);
@@ -699,24 +708,26 @@ export function actionPose(p: Pose, a: Action, u: number, c: ActCtx): void {
       break;
     }
     case 'noooo': {
+      // Theatrical swoon (comic, NOT upset): back of the right hand to the forehead, left arm
+      // flung out, head thrown back, knees buckling a little, swaying.
       const w = envelope(u, 0.15, 0.2);
       const sway = Math.sin(at * 4.5);
+      const back = -0.34;
+      mt(p, C.hx, back, w);
+      mt(p, C.sx, -0.14, w);
+      mt(p, C.bz, 0.05 * sway, w);
+      const fh = headTargetPitched(s, 1, -0.01, s.headRy * 0.42, s.headRz + 0.05, back);
+      ik(p, 1, w, fh[0], fh[1], fh[2], 1, 0.35, -0.2);
+      mt(p, C.wRx, -0.4, w);
       mt(p, C.ikL, 0, w);
-      mt(p, C.ikR, 0, w);
-      mt(p, C.aLo, 1.85, w);
-      mt(p, C.aRo, 1.85, w);
-      mt(p, C.aLx, -0.5, w);
-      mt(p, C.aRx, -0.5, w);
-      mt(p, C.aLe, 0.35, w);
-      mt(p, C.aRe, 0.35, w);
-      mt(p, C.hx, -0.5, w);
-      mt(p, C.sx, -0.16, w);
-      mt(p, C.bz, 0.06 * sway, w);
+      mt(p, C.aLo, 1.75 + 0.1 * sway, w);
+      mt(p, C.aLx, -0.55, w);
+      mt(p, C.aLe, 0.3, w);
       for (let li = 0; li < 2; li++) {
         const b = li === 0 ? C.lLx : C.lRx;
-        mt(p, b, -0.35, w);
-        mt(p, b + 3, 0.7, w);
-        mt(p, b + 4, -0.35, w);
+        mt(p, b, -0.3, w);
+        mt(p, b + 3, 0.6, w);
+        mt(p, b + 4, -0.3, w);
       }
       break;
     }

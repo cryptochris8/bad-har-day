@@ -42,4 +42,16 @@ _Claude Code reads this file automatically._
 ---
 
 ## This project
-Fresh scaffold — nothing built yet. Ask Claude to set up the starter for this stack, then build from there.
+**BAD HAIR DAY!** — a procedural 3D browser family arcade game about one school morning (5:15 → ~8:05 AM in
+10–20 minutes): Chris, Ashley, Addy, Ellie, Heidi and the dog; chores, wake-up, THE BLACK BRUSH + Mom's hair check,
+the rush out the door, the school run, the Morning Report Card. Vite + TypeScript + Three.js, every model and sound
+procedural, no backend. Fourth game in the MAILBOX MAYHEM / TRASH PANDA TROUBLE / ATHLETE MAYHEM format (those repos are
+read-only references). The web-app profile above is general context only: no Next.js or UI framework here.
+- Design: `docs/GDD.md` (§0 tone rules!). Module contracts, ownership, conventions: `docs/ARCHITECTURE.md`. Overview: `README.md`.
+- Commands: `npm run dev` (:5190) · `npm run build` · `npm test` (Vitest) · `npm run test:e2e` (Playwright).
+- Jump in: `/?test=1&act=1..5` or `/?test=1&activity=dog|coffee|lunch|trash|dishes|wake|hair|rush|drive` (`&seed=N`).
+  Debug hooks: `window.__BHD__` (src/game/debug.ts), incl. `autopilot(true)` to play a whole morning by itself.
+- Screenshots: `node tools/shot.mjs "/?test=1&act=3" shots/x.png --until "window.__BHD__ && window.__BHD__.act()===3"`;
+  walkthroughs: `node tools/walk.mjs "<url>" shots/w <steps…>` (steps documented in the file header).
+- GitHub: https://github.com/cryptochris8/bad-har-day (main). Not deployed yet — publishing (Netlify, `netlify.toml`
+  is ready) needs Chris's explicit approval each time.

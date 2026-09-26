@@ -185,7 +185,8 @@ export interface UiManager {
   // ── in-game presentation ──
   /** Full-screen act card (~3.2 s; any confirm skips the rest). */
   actCard(card: ActCard): Promise<void>;
-  banner(text: string, style?: BannerStyle, opts?: { sub?: string; seconds?: number; icon?: IconId }): void;
+  /** `pos` (default 'center'): 'top' / 'bottom' keep a banner off a close-up's faces. */
+  banner(text: string, style?: BannerStyle, opts?: { sub?: string; seconds?: number; icon?: IconId; pos?: 'center' | 'top' | 'bottom' }): void;
   /** Mock-epic boss card ("MOM" / "THE HAIR INSPECTOR") with a heart-shaped boss bar (~3 s). */
   bossIntro(name: string, title: string): Promise<void>;
   /** Speech bubble anchored to a world point (projected every frame). */
@@ -219,6 +220,8 @@ export interface Portrait {
   color: string;
   /** 0..1 progress ring. */
   progress: number;
+  /** Optional goal mark on the ring (0..1), e.g. 0.95 = "Mom approves at 95 %". */
+  goal?: number;
   /** Small status line ("I'M DONE!", "Needs: left shoe"). */
   status?: string;
   badge?: IconId | null;
@@ -229,6 +232,11 @@ export interface Portrait {
 
 export interface PortraitRow {
   items: Portrait[];
+  /**
+   * Compact layout for close-up cameras (brushing): small portraits in a single tight row tucked into the top-right
+   * corner (chips beside/under them), leaving the centre and upper-middle of the screen clear.
+   */
+  compact?: boolean;
   /** Action chips under the row, e.g. [{id:'pass', label:'PASS THE BLACK BRUSH', slot:'secondary'}]. */
   chips?: { id: string; label: string; slot?: 'primary' | 'secondary' | 'alt'; icon?: IconId; disabled?: boolean }[];
 }

@@ -285,10 +285,11 @@ export class DriveView {
       const hurry = e.hurried || gz.flap > 0;
       for (let i = 0; i < e.geese.length; i++) {
         const o = e.geese[i]!;
-        const walking = o.vx > 0.05;
+        const walking = Math.abs(o.vx) > 0.05;
         const ph = gz.phase[i]! + this.time * (hurry ? 16 : walking ? 9 : 2.5);
         const bob = walking ? Math.abs(Math.sin(ph)) * 0.05 : 0;
-        const yaw = walking || e.started ? Math.PI / 2 : Math.PI / 2 + Math.sin(this.time * 0.6 + i) * 0.8;
+        const dir = o.vx < -0.05 ? -1 : 1;
+        const yaw = walking || e.started ? (dir * Math.PI) / 2 : Math.PI / 2 + Math.sin(this.time * 0.6 + i) * 0.8;
         tmpE.set(0, yaw, walking ? Math.sin(ph) * 0.13 : Math.sin(ph) * 0.05, 'YXZ');
         tmpQ.setFromEuler(tmpE);
         // pecking the grass while waiting

@@ -176,3 +176,53 @@ export function shuffled<T>(items: readonly T[], next: () => number): T[] {
 
 /** Yaw (0 = facing +Z) that faces from (x0, z0) toward (x1, z1). */
 export const yawToward = (x0: number, z0: number, x1: number, z1: number): number => Math.atan2(x1 - x0, z1 - z0);
+
+// ── portrait framing ─────────────────────────────────────────────────────────
+
+export interface PortraitFraming {
+  /** Distance multiplier at full portrait (< 1 = move in; the rig widens the FOV on narrow screens). */
+  zoom: number;
+  /** Raise the subject by this fraction of the half-screen height (clears the centred prompt / thumb zone). */
+  lift: number;
+  /** Move the subject left by this fraction of the half-screen width (clears the right-hand cards). */
+  left: number;
+}
+
+/** 0 on landscape-ish screens (aspect ≥ 0.9) → 1 on a tall phone (aspect ≤ 0.5). */
+export function portraitAmount(aspect: number): number {
+  if (!(aspect > 0)) return 0;
+  return clamp01((0.9 - aspect) / 0.4);
+}
+
+interface GoalLike {
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+}
+
+/**
+ * Pure: adapt a close-up goal (designed for 16:9) to a tall screen. `vfovDeg` = the vertical FOV the rig will
+ * really use on this aspect. Moves the camera in along its view line, then slides camera + target so the subject
+ * sits higher (and a little left) on screen. Writes into `out` (may alias nothing in `g`).
+ */
+export function portraitGoal(g: GoalLike, aspect: number, vfovDeg: number, f: PortraitFraming, out: GoalLike): GoalLike {
+  const k = portraitAmount(aspect);
+  const zoom = 1 + (f.zoom - 1) * k;
+  const tx = g.target.x;
+  const ty = g.target.y;
+  const tz = g.target.z;
+  const px = tx + (g.position.x - tx) * zoom;
+  const py = ty + (g.position.y - ty) * zoom;
+  const pz = tz + (g.position.z - tz) * zoom;
+  const dist = Math.hypot(px - tx, py - ty, pz - tz);
+  const halfV = Math.tan((Math.max(1, Math.min(170, vfovDeg)) * Math.PI) / 360) * dist;
+  const dy = -f.lift * k * halfV;
+  // "Left on screen" = move the camera and target toward screen-right (+X for these north-wall stations).
+  const dx = f.left * k * halfV * Math.max(0.1, aspect);
+  out.position.x = px + dx;
+  out.position.y = py + dy;
+  out.position.z = pz;
+  out.target.x = tx + dx;
+  out.target.y = ty + dy;
+  out.target.z = tz;
+  return out;
+}

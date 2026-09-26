@@ -53,7 +53,7 @@ export interface DayPlan {
   /** "YYYY-MM-DD" for daily mornings. */
   dateKey: string | null;
   weather: Weather;
-  /** Act I chore list in display order. Always includes 'dog' and 'coffee'. 3..5 items. */
+  /** Act I chore list in display order. Always includes 'dog' and 'coffee'. 4..5 items. */
   chores: ChoreId[];
   dogQuirk: DogQuirk;
   /** Each girl's favourite lunch item (a heart, never a rule). */

@@ -138,6 +138,8 @@ export class HumanRig implements Character {
   private timedExpr: Expression | null = null;
   private timedLeft = 0;
   private expr: Expression = 'neutral';
+  /** Seconds since the resolved expression last changed (for the little "eep!" pop). */
+  private exprT = 10;
   private sleepTarget = 0;
   private sleep = 0;
   private readonly fs = { lid: 0, lidR: 0, lidTilt: 0, lowLid: 0.08, browY: 0, browTilt: 0, browAsym: 0, pupil: 1, pupilY: 0, mouthScale: 1, blush: 0.75, headX: 0, headZ: 0 };
@@ -485,7 +487,10 @@ export class HumanRig implements Character {
         this.timedLeft = 0;
       }
     }
-    this.expr = this.resolveExpression();
+    const next = this.resolveExpression();
+    if (next !== this.expr) this.exprT = 0;
+    else this.exprT += dt;
+    this.expr = next;
     const f = faceFor(this.expr, this.o.flavor);
     const fs = this.fs;
     const k = this.time < 0.05 ? 1 : dt > 0 ? 1 - Math.exp(-14 * dt) : 0;
@@ -587,7 +592,9 @@ export class HumanRig implements Character {
 
     // Head (+ look + expression tilt).
     const hy = v[C.hy]! + this.lookYaw * 0.78;
-    const hx = v[C.hx]! - this.lookPitch * 0.72 + this.fs.headX;
+    // A tiny springy head pop when an "eep!" (or surprise) lands.
+    const pop = this.expr === 'eek' || this.expr === 'surprised' ? -0.07 * Math.sin(this.exprT * 22) * Math.exp(-this.exprT * 7) : 0;
+    const hx = v[C.hx]! - this.lookPitch * 0.72 + this.fs.headX + pop;
     bn[B.head]!.rotation.set(hx, hy, v[C.hz]! + this.fs.headZ, 'YXZ');
 
     // Arms (FK, then IK blended on top).
@@ -635,8 +642,6 @@ export class HumanRig implements Character {
       case 'pout':
       case 'wavy':
         return 'o';
-      case 'eek':
-        return 'grin';
       default:
         return 'smile';
     }
@@ -684,7 +689,7 @@ export class HumanRig implements Character {
         else ld.scale.set(1, low, Math.min(1, 0.35 + low));
         const ir = bn[o + F.iris]!;
         const px = Math.max(-er * 0.2, Math.min(er * 0.2, this.lookYaw * er * 0.22));
-        const py = Math.max(-er * 0.16, Math.min(er * 0.14, this.lookPitch * er * 0.3 + fs.pupilY * er * 0.12));
+        const py = Math.max(-er * 0.16, Math.min(er * 0.24, this.lookPitch * er * 0.3 + fs.pupilY * er * 0.22));
         ir.position.set(px, py, 0);
         const ps = Math.max(0.5, fs.pupil);
         ir.scale.set(ps, ps, 1);

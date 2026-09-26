@@ -358,8 +358,9 @@ export function buildLampSystem(glows: Glows, cut: CutUniforms, quality: 'high' 
     group.add(pools);
   }
 
-  // Up to 3 point lights (high quality only).
-  const POINTS = quality === 'high' ? 3 : 0;
+  // Up to 3 point lights on high; ONE on low (phones default to low — without it station close-ups at 5:15 lose all
+  // their warm lamp light and turn flat navy).
+  const POINTS: number = quality === 'high' ? 3 : 1;
   const points: THREE.PointLight[] = [];
   for (let i = 0; i < POINTS; i++) {
     const p = new THREE.PointLight(PAL.lampWarm, 0, 3.4, 1.8);

@@ -3,6 +3,7 @@ import { Ball, CrossingGuard, GarbageTruck, Geese, GreenLights, Jogger, LIGHT_TI
 import { CAR } from '../../../src/activities/drive/model';
 import type { Placed } from '../../../src/activities/drive/placement';
 import { DriveSim, NO_INPUT, autoInput, bayStopS, type DriveInput } from '../../../src/activities/drive/sim';
+import { obedient } from './policies';
 import type { DriveEvent } from '../../../src/plan/types';
 import { CROSSWALKS, CROSSWALK_STOP, DROPOFF, LIGHTS, ROUTE_LENGTH } from '../../../src/world/route/layout';
 
@@ -68,7 +69,54 @@ describe('crossing guard', () => {
   });
 });
 
+describe('crossing guard, obedient early stop (QA P1)', () => {
+  it('stopping far short of the line (braking the moment "Slow down" shows) still gets her thank-you, then the crossing finishes and the van goes on', () => {
+    const s = sim([['crossingGuard', 205]]);
+    const g = s.events[0] as CrossingGuard;
+    let stoppedAt = -1;
+    let tStop = 0;
+    const cues = run(s, (x) => {
+      const r = obedient(x);
+      if (stoppedAt < 0 && x.car.v < 0.1 && g.phase !== 'wait') {
+        stoppedAt = g.line - x.front;
+        tStop = x.t;
+      }
+      return r;
+    }, (x) => x.car.s > 230, 120);
+    expect(stoppedAt).toBeGreaterThan(30); // an obedient driver stops well short of the line…
+    expect(cues.some((c) => c.type === 'guardThanks')).toBe(true); // …and it counts
+    expect(g.reaction).toBe('thanks');
+    expect(g.result).toBe('good');
+    expect(cues.some((c) => c.type === 'guardBack')).toBe(true);
+    expect(s.car.s).toBeGreaterThan(230);
+    expect(s.t - tStop).toBeLessThan(25); // no stall until the late wrap-up
+    expect(cues.some((c) => c.type === 'assist')).toBe(false);
+  });
+
+  it('the guard is already out when the girls spot her (so a stop at the first prompt is never "too early")', () => {
+    const s = sim([['crossingGuard', 282]]);
+    const g = s.events[0] as CrossingGuard;
+    run(s, passive, (x) => x.events[0]!.spotted, 60);
+    expect(g.phase).not.toBe('wait');
+  });
+});
+
 describe('geese', () => {
+  it('a polite honk while still holding GAS clears them in time — no Oops (QA P2)', () => {
+    for (const seed of [2, 3, 4, 9]) {
+      const s = sim([['geese', 150]], seed);
+      let honked = false;
+      const cues = run(s, (x) => {
+        const honk = !honked && 150 - x.front < 30;
+        if (honk) honked = true;
+        return { gas: 1, brake: 0, lane: 0, honk };
+      }, (x) => x.car.s > 190);
+      expect(cues.some((c) => c.type === 'geeseHurry')).toBe(true);
+      expect(cues.some((c) => c.type === 'bump')).toBe(false);
+      expect(s.events[0]!.result).toBe('good');
+    }
+  });
+
   it('a polite honk makes them hurry; waiting works too; no bumps', () => {
     const honk = sim([['geese', 150]]);
     const cuesH = run(honk, (x) => autoInput(x), (x) => x.car.s > 190);

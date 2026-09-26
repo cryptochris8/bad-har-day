@@ -13,8 +13,9 @@ import { ACTS, type ActivityResult } from '../../plan/types';
 import { GIRL_COLORS, makeItem, makeMug, type Prop } from '../../props';
 import { PAL } from '../../render/palette';
 import type { PortraitRow, TaskItem } from '../../ui/types';
-import type { Anchor, AnchorId, HideSpot } from '../../world/types';
+import type { Anchor, AnchorId, HideSpot, RoomId } from '../../world/types';
 import {
+  GlyphHint,
   HURRY_SPEED,
   Hotspots,
   HurryHint,
@@ -23,17 +24,22 @@ import {
   ScriptHost,
   Talk,
   WALK_SPEED,
+  buttonScheme,
   dist2,
   freeSpotNear,
   holdProp,
+  insideHouse,
   roamScheme,
   setDown,
   wearBackpack,
   yawTo,
   type Lane,
+  type Step,
 } from '../wake/common';
 import {
+  DEPART_SKIP_AFTER,
   DogHelper,
+  HUG_RING,
   ITEM_ICON,
   ITEM_NAME,
   RushBook,
@@ -44,8 +50,12 @@ import {
   emptyQuip,
   foundLine,
   forwardYaw,
+  LEAD_HOP,
+  LEAD_WAIT,
   needLine,
+  pathLength,
   pickHint,
+  pointAlong,
   reverseYaw,
   rushFlags,
   rushStars,
@@ -130,6 +140,10 @@ class RushActivity implements Activity {
   private instrLeft = 0;
   /** Watchdog: a pick-up / hand-off never keeps Chris busy for long (e.g. if its script was cut short). */
   private busyT = 0;
+  /** Seconds into Ashley's departure (PRIMARY / tap skips it after DEPART_SKIP_AFTER). */
+  private departT = 0;
+  private skipHint: GlyphHint | null = null;
+  private readonly lead: P2 = { x: 0, z: 0 };
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -137,8 +151,9 @@ class RushActivity implements Activity {
     this.ctx = ctx;
     this.host = new ScriptHost(ctx, 'rush');
     this.talk = new Talk(ctx);
-    this.spots = new Hotspots(ctx);
+    this.spots = new Hotspots(ctx, rushWalkable);
     this.hurry = new HurryHint(ctx.ui.activityLayer());
+    this.skipHint = new GlyphHint(ctx.ui.activityLayer(), 'primary', 'Skip', 'right');
     this.main = this.host.lane();
     this.ashLane = this.host.lane();
     this.dogLane = this.host.lane();
@@ -210,6 +225,8 @@ class RushActivity implements Activity {
     car.root.visible = true;
     car.setDoor(0, 0);
     world.door('front').close();
+    // The back door stays open all act: the backyard is one of the hide spots (keyboard / pad walk out through it).
+    world.door('back').open();
 
     // The missing things, each tinted with its owner's colour.
     for (const it of this.book.items) {
@@ -239,6 +256,7 @@ class RushActivity implements Activity {
       items: this.book.items.map((i) => ({ item: i.item, girl: i.girl, spot: i.spot, state: i.state })),
       ashleyGone: this.ashleyGone,
       car: this.car ? this.car.stage : null,
+      departT: this.departT,
       dogHints: this.dog.hints,
       stars: this.finished ? this.result() : null,
     };
@@ -254,6 +272,7 @@ class RushActivity implements Activity {
   }
 
   controls(): ControlScheme | null {
+    if (this.phase === 'depart' && !this.finished) return this.departT >= DEPART_SKIP_AFTER ? buttonScheme('SKIP', 'go') : null;
     if (this.finished || this.phase !== 'play') return null;
     // Keep the overlay steady through the short pick-up / hand-off animations (no primary meanwhile).
     return this.busy ? roamScheme(null, 'hand', true) : roamScheme(this.spots.button, this.spots.icon, true);
@@ -279,6 +298,8 @@ class RushActivity implements Activity {
     this.spots.clear();
     this.hurry?.dispose();
     this.hurry = null;
+    this.skipHint?.dispose();
+    this.skipHint = null;
     ctx.ui.prompt(null);
     ctx.ui.instruction(null);
     // Everything delivered, Ashley gone, Chris dressed by the door.
@@ -307,6 +328,8 @@ class RushActivity implements Activity {
     this.spots.clear();
     this.hurry?.dispose();
     this.hurry = null;
+    this.skipHint?.dispose();
+    this.skipHint = null;
     this.detachAll();
     const { family } = ctx;
     const chris = family.chris;
@@ -357,7 +380,18 @@ class RushActivity implements Activity {
     this.updateCar(dt);
     this.updateDoor(dt);
     this.updateItems(dt);
-    this.spots.update(controls, this.phase === 'play' && !this.busy, this.phase === 'play');
+    let skippedNow = false;
+    if (this.phase === 'depart') {
+      this.departT += dt;
+      const p = ctx.pointer;
+      const tap = p.enabled && p.pressed && p.source !== 'virtual';
+      if (dt > 0 && this.departT >= DEPART_SKIP_AFTER && (controls.primaryPressed || tap)) {
+        this.skipDeparture();
+        skippedNow = true; // the skipping press must not also use a hotspot this frame
+      }
+    }
+    this.skipHint?.update(this.phase === 'depart' && this.departT >= DEPART_SKIP_AFTER, ctx.input.lastDevice);
+    this.spots.update(controls, this.phase === 'play' && !this.busy && !skippedNow, this.phase === 'play');
     this.hurry?.update(this.phase === 'play', ctx.input.lastDevice);
 
     // Portrait taps: that girl reminds you what she needs.
@@ -509,8 +543,12 @@ class RushActivity implements Activity {
         radius: 1.25,
         label: () => {
           const it = this.book.carried;
-          return it ? `Give ${DISPLAY_NAME[g]} her ${ITEM_NAME[it.item]}` : '';
+          if (!it) return '';
+          if (it.girl !== g) return `That’s ${DISPLAY_NAME[it.girl]}’s — take it to ${DISPLAY_NAME[it.girl]}`;
+          return `Give ${DISPLAY_NAME[g]} her ${ITEM_NAME[it.item]}`;
         },
+        // Above her speech bubbles (they sit at 'overhead').
+        promptY: c.height + 1.4,
         button: 'GIVE',
         icon: 'hand',
         enabled: () => this.phase === 'play' && this.book.carried !== null,
@@ -575,10 +613,10 @@ class RushActivity implements Activity {
     const chris = ctx.family.chris;
     if (res.kind === 'emptyHands') return;
     if (res.kind === 'notHers') {
-      const owner = DISPLAY_NAME[res.owner];
-      c.play('shakeHead');
-      this.talk.say(c, `That’s ${owner}’s!`, { mood: 'normal', seconds: 1.8 });
+      // The prompt already says whose it is: she shakes her head and points at her sister, who bounces.
       const oc = ctx.family.girl(res.owner);
+      ctx.npcs.faceToward(c, oc.root.position);
+      c.play('point');
       oc.emote('exclaim', 1.4);
       oc.play('bounce');
       ctx.audio.play('boing', { volume: 0.35 });
@@ -713,26 +751,52 @@ class RushActivity implements Activity {
       const hs = ctx.world.hideSpot(it.spot);
       return { it, x: hs.item.x, z: hs.item.z, hs };
     });
-    const w = ctx.walker.position;
-    const pick = pickHint(cands, w.x, w.z);
+    const w0 = ctx.walker.position;
+    const pick = pickHint(cands, w0.x, w0.z);
     if (!pick) return;
     this.dogHinting = true;
     const dog = ctx.family.dog;
-    this.talk.woof(dog.socket('overhead'), 'Woof! Woof!', 1.6);
-    ctx.audio.play('dogBark');
+    const chrisPos = ctx.walker.position;
+    const still = () => pick.it.state === 'hidden';
     this.dogLane.run(async (s) => {
       dog.setPose('stand');
-      const spot = { x: 0, z: 0 };
-      freeSpotNear((x, z, r) => ctx.world.free(x, z, r), pick.x, pick.z, yawTo(pick.x, pick.z, pick.hs.stand.x, pick.hs.stand.z), spot, [0.35, 0.55, 0.8, 1.0], 0.25);
-      await s.walk(dog, { x: spot.x, y: 0, z: spot.z }, { style: 'run', speed: 3.6 });
+      // 1) Trot up beside Chris (on camera), bark: "follow me!"
+      const side = { x: 0, z: 0 };
+      freeSpotNear((x, z, r) => ctx.world.free(x, z, r), chrisPos.x, chrisPos.z, yawTo(chrisPos.x, chrisPos.z, pick.x, pick.z), side, [0.8, 1.0, 1.2], 0.25);
+      await s.walk(dog, { x: side.x, y: 0, z: side.z }, { style: 'run', speed: 3.6 });
       ctx.npcs.faceToward(dog, { x: pick.x, y: 0, z: pick.z });
-      for (let k = 0; k < 4 && pick.it.state === 'hidden'; k++) {
+      dog.play('bark');
+      dog.emote('exclaim', 1.4);
+      ctx.audio.play('dogBark');
+      this.talk.woof(dog.socket('overhead'), 'Woof! (follow me!)', 2);
+      await s.wait(1.0);
+      // 2) Lead the way in short hops, waiting (and barking) until Chris catches up.
+      const dig = { x: 0, z: 0 };
+      freeSpotNear((x, z, r) => ctx.world.free(x, z, r), pick.x, pick.z, yawTo(pick.x, pick.z, pick.hs.stand.x, pick.hs.stand.z), dig, [0.35, 0.55, 0.8, 1.0], 0.25);
+      for (let hop = 0; hop < 14 && still(); hop++) {
+        const dp = dog.root.position;
+        const path = ctx.world.navPath({ x: dp.x, y: 0, z: dp.z }, { x: dig.x, y: 0, z: dig.z });
+        const remain = pathLength(path);
+        if (remain < 0.4) break;
+        pointAlong(path, Math.min(LEAD_HOP, remain), this.lead);
+        await s.walk(dog, { x: this.lead.x, y: 0, z: this.lead.z }, { style: 'run', speed: 2.8 });
+        if (remain <= LEAD_HOP) break;
+        for (let k = 0; k < 4 && still() && dist2(chrisPos, dog.root.position) > LEAD_WAIT; k++) {
+          ctx.npcs.faceToward(dog, chrisPos);
+          dog.play('bark');
+          ctx.audio.play('dogBarkSmall', { volume: 0.8 });
+          await s.until(() => !still() || dist2(chrisPos, dog.root.position) <= LEAD_WAIT, 1.8);
+        }
+      }
+      // 3) There: dig + bark until Chris finds it (or gives up for now).
+      ctx.npcs.faceToward(dog, { x: pick.x, y: 0, z: pick.z });
+      for (let k = 0; k < 6 && still(); k++) {
         dog.play(k % 2 === 0 ? 'dig' : 'bark');
         dog.emote('exclaim', 1.2);
         ctx.audio.play(k % 2 === 0 ? 'dogPaws' : 'dogBark', { volume: 0.8 });
         v1.set(pick.x, pick.hs.item.y + 0.2, pick.z);
         ctx.fx.burst('sparkle', v1, { count: 6 });
-        if (k === 0) this.talk.woof(dog.socket('overhead'), 'Woof! (over here!)', 2);
+        if (k === 0) this.talk.woof(dog.socket('overhead'), 'Woof! (right here!)', 2);
         await s.wait(1.6);
       }
       this.dogDone();
@@ -748,9 +812,11 @@ class RushActivity implements Activity {
 
   // ── Ashley leaves for work ────────────────────────────────────────────────
 
+  /** Ashley leaves for work (~18 s, skippable with PRIMARY / a tap): coffee, a group hug, out the door, off she drives. */
   private depart(): void {
     const ctx = this.ctx!;
     this.phase = 'depart';
+    this.departT = 0;
     this.portraitsDirty = true;
     this.spots.cancelWalk();
     ctx.ui.prompt(null);
@@ -763,108 +829,166 @@ class RushActivity implements Activity {
     this.ashLane.run(async (s) => {
       ctx.camera.follow(a.root);
       a.emote('exclaim', 1.2);
-      this.talk.say(a, this.book.allDone ? 'Everybody’s ready? Look at you!' : 'Oh! Look at the time!', { mood: 'excited', seconds: 2 });
-      a.play('checkWatch');
-      await s.wait(1.2);
-      // Coffee for the road.
+      this.talk.say(a, this.book.allDone ? 'Everybody’s ready? Look at you!' : 'Oh! Look at the time!', { mood: 'excited', seconds: 1.8 });
+      // Coffee for the road (she's standing right by it).
       const mug = this.mug;
       if (mug && mug.parent && mug.visible) {
         mug.getWorldPosition(v1);
-        freeSpotNear((x, z, r) => ctx.world.free(x, z, r), v1.x, v1.z, Math.PI / 2, this.out, [0.55, 0.7, 0.85, 1.0]);
-        if (dist2(a.root.position, { x: this.out.x, y: 0, z: this.out.z }) > 0.3) await s.walk(a, { x: this.out.x, y: 0, z: this.out.z }, { style: 'run' });
         ctx.npcs.faceToward(a, v1);
-        await s.wait(0.3);
         a.play('grab');
-        await s.wait(0.35);
+        await s.wait(0.4);
         holdProp(mug, a, 'handR');
         this.mugHeld = true;
         a.setHold('mug');
         ctx.audio.play('mugPick');
         if (ctx.state.coffee.made) {
-          a.emote('heart', 1.8);
+          a.emote('heart', 1.6);
           a.socket('overhead').getWorldPosition(v1);
           ctx.fx.burst('heart', v1, { count: 8 });
           ctx.audio.play('heart');
-          this.talk.say(a, 'Coffee for the road. You’re the best.', { seconds: 2 });
         }
-        await s.wait(0.9);
       }
-      // Chris heads to the door to see her off — on the door's side away from the girls (not in the hug line).
-      const door = ctx.world.anchor('frontDoorIn');
-      let cx = 0;
-      for (const g of GIRLS) cx += ctx.family.girl(g).root.position.x / GIRLS.length;
-      const away = Math.sign(door.x - cx) || 1;
-      const chrisSpot = { x: door.x + away * 0.95, z: door.z + 0.3 };
-      if (!ctx.world.free(chrisSpot.x, chrisSpot.z, 0.3)) freeSpotNear((x, z, r) => ctx.world.free(x, z, r), chrisSpot.x, chrisSpot.z, away > 0 ? Math.PI / 2 : -Math.PI / 2, chrisSpot, [0.25, 0.45, 0.7]);
-      void ctx.walker.walkTo({ x: chrisSpot.x, y: 0, z: chrisSpot.z }, { faceYaw: yawTo(chrisSpot.x, chrisSpot.z, cx, door.z - 1) });
-      // Hugs at the front door.
+      // A group hug in front of the girls, on the door side; Chris steps in behind them.
+      const hug = this.hugSpot();
+      const behind = this.behindGirls();
+      void ctx.walker.walkTo({ x: behind.x, y: 0, z: behind.z }, { speed: 3, faceYaw: 0 });
+      const walking = s.walk(a, { x: hug.x, y: 0, z: hug.z }, { speed: 3.1, faceYaw: Math.PI });
+      walking.catch(() => undefined); // if skipped before we await it, its Cancelled must not go unhandled
+      await s.until(() => dist2(a.root.position, { x: hug.x, y: 0, z: hug.z }) < 3.2, 8);
+      GIRLS.forEach((g, gi) => {
+        const o = HUG_RING[gi]!;
+        const c = ctx.family.girl(g);
+        c.cancelAction();
+        c.setHold('none');
+        void ctx.npcs.walkTo(c, { x: hug.x + o.x, y: 0, z: hug.z + o.z }, { speed: 2.4, faceYaw: yawTo(hug.x + o.x, hug.z + o.z, hug.x, hug.z) });
+      });
+      await walking;
+      await s.until(() => GIRLS.every((g) => !ctx.npcs.isBusy(ctx.family.girl(g))), 2.5);
+      a.play('hug', { duration: 2 });
+      this.talk.say(a, 'Love you! Have a great day!', { style: 'shout', mood: 'excited', seconds: 2.4 });
       for (const g of GIRLS) {
         const c = ctx.family.girl(g);
-        const gp = c.root.position;
-        freeSpotNear((x, z, r) => ctx.world.free(x, z, r), gp.x, gp.z, 0, this.out, [0.62, 0.72, 0.85], 0.22);
-        await s.walk(a, { x: this.out.x, y: 0, z: this.out.z }, { style: 'walk', speed: 2.2 });
-        ctx.npcs.faceToward(a, gp);
-        ctx.npcs.faceToward(c, a.root.position);
-        await s.wait(0.3);
-        a.play('hug', { duration: 1.7 });
-        c.play('hug', { duration: 1.7 });
-        await s.wait(0.8);
+        c.play('hug', { duration: 1.8 });
+        await s.wait(0.22);
         ctx.audio.play('kiss');
         c.socket('head').getWorldPosition(v1);
         v1.y += 0.2;
         ctx.fx.burst('heart', v1, { count: 6 });
-        c.setExpression('love', 1.6);
-        await s.wait(0.9);
+        c.setExpression('love', 1.8);
       }
-      const mid = ctx.world.anchor('entryGather2');
-      ctx.npcs.faceToward(a, { x: mid.x, y: 0, z: mid.z - 1 });
-      a.play('wave');
-      this.talk.say(a, 'Love you! Have a great day!', { style: 'shout', mood: 'excited', seconds: 2.4 });
-      ctx.audio.play('heart', { delay: 0.2 });
-      for (const g of GIRLS) ctx.family.girl(g).play('wave');
-      await s.wait(1.6);
+      await s.wait(0.9);
       this.talk.say(ctx.family.girl(GIRLS[ctx.rng.int(0, 2)]!), 'LOVE YOU, MOM!', { style: 'shout', mood: 'excited', seconds: 1.6 });
-      await s.wait(0.5);
       ctx.npcs.faceToward(a, chris.root.position);
       await s.wait(0.35);
       a.play('thumbsUp');
-      this.talk.say(a, 'You’ve got this!', { mood: 'normal', seconds: 2 });
-      await s.wait(0.6);
+      this.talk.say(a, 'You’ve got this!', { mood: 'normal', seconds: 1.8 });
+      await s.wait(0.35);
       chris.play('thumbsUp');
-      await s.wait(1.2);
-      // Out the front door…
-      const outA = ctx.world.anchor('frontDoorOut');
+      await s.wait(0.9);
+      // Out the front door (the girls wave and go back to their spots)…
       ctx.world.door('front').open();
       ctx.audio.play('doorOpen');
-      await s.walk(a, outA, { speed: 2.2 });
-      this.doorAnim = 0.6;
-      // …to her car.
-      const carA = ctx.world.anchor('ashleyCar');
-      await s.walk(a, carA, { speed: 2.4, faceYaw: carA.yaw });
-      const car = ctx.world.car('ashley');
-      car.setDoor(0, 1);
-      ctx.audio.play('carDoor');
-      await s.wait(0.45);
-      this.getInCar();
-      await s.wait(0.25);
-      car.setDoor(0, 0);
-      ctx.audio.play('carDoor', { pitch: 0.9 });
-      await s.wait(0.5);
-      ctx.audio.play('carStart');
-      await s.wait(0.8);
-      this.startCar();
-      await s.until(() => this.car === null || this.car.stage === 'gone', 14);
-      this.ashleyLeaves();
-      await s.wait(0.2);
-      this.phase = this.book.allDone ? 'finish' : 'play';
-      ctx.camera.follow(null);
-      this.portraitsDirty = true;
-      if (this.book.allDone) this.finish(true);
-      else {
-        ctx.hud.objective = 'Still missing things — keep looking! The school run leaves at 7:50.';
-        this.instr('Keep looking!', `${this.book.remaining} still missing`, 2.4);
+      for (const g of GIRLS) {
+        const c = ctx.family.girl(g);
+        c.play('wave');
+        const home = ctx.world.anchor(GATHER[g]);
+        void ctx.npcs.walkTo(c, home, { speed: 1.8, faceYaw: 0 });
       }
+      await s.walk(a, ctx.world.anchor('frontDoorOut'), { speed: 2.8 });
+      this.doorAnim = 0.4;
+      // …cut to her car.
+      await this.driveOff(s);
+      this.endDeparture();
     });
+  }
+
+  /** Where Ashley stands for the group hug: in front of the girls (the door side), clear of furniture. */
+  private hugSpot(): P2 {
+    const ctx = this.ctx!;
+    let x = 0;
+    let z = -Infinity;
+    for (const g of GIRLS) {
+      const an = ctx.world.anchor(GATHER[g]);
+      x += an.x / GIRLS.length;
+      z = Math.max(z, an.z);
+    }
+    const out = { x, z: z + 0.75 };
+    if (!ctx.world.free(out.x, out.z, 0.3)) freeSpotNear((px, pz, r) => ctx.world.free(px, pz, r), out.x, out.z, 0, out, [0.3, 0.5, 0.7]);
+    return out;
+  }
+
+  /** Where Chris watches from: behind the girls (away from the door, out of Ashley's way). */
+  private behindGirls(): P2 {
+    const ctx = this.ctx!;
+    let x = 0;
+    let z = Infinity;
+    for (const g of GIRLS) {
+      const an = ctx.world.anchor(GATHER[g]);
+      x += an.x / GIRLS.length;
+      z = Math.min(z, an.z);
+    }
+    const out = { x, z: z - 1.2 };
+    if (!ctx.world.free(out.x, out.z, 0.3)) freeSpotNear((px, pz, r) => ctx.world.free(px, pz, r), out.x, out.z, Math.PI, out, [0.3, 0.5, 0.7, 0.9]);
+    return out;
+  }
+
+  private async driveOff(s: Step): Promise<void> {
+    const ctx = this.ctx!;
+    const a = ctx.family.ashley;
+    const car = ctx.world.car('ashley');
+    const carA = ctx.world.anchor('ashleyCar');
+    ctx.npcs.place(a, carA, carA.yaw);
+    ctx.camera.follow(car.root);
+    ctx.camera.snap();
+    car.setDoor(0, 1);
+    ctx.audio.play('carDoor');
+    await s.wait(0.35);
+    this.getInCar();
+    await s.wait(0.2);
+    car.setDoor(0, 0);
+    ctx.audio.play('carDoor', { pitch: 0.9 });
+    ctx.audio.play('carStart', { delay: 0.1 });
+    await s.wait(0.35);
+    this.startCar();
+    await s.until(() => this.car === null || this.car.stage === 'gone', 10);
+  }
+
+  /** The departure is over (played out or skipped): Ashley + her car gone, everyone back, play on. */
+  private endDeparture(): void {
+    const ctx = this.ctx!;
+    if (!this.ashleyGone) this.departNow();
+    ctx.world.door('front').close();
+    this.doorAnim = -1;
+    for (const g of GIRLS) {
+      const c = ctx.family.girl(g);
+      const home = ctx.world.anchor(GATHER[g]);
+      if (dist2(c.root.position, home) > 0.3 && !ctx.npcs.isBusy(c)) void ctx.npcs.walkTo(c, home, { speed: 1.8, faceYaw: 0 });
+    }
+    if (ctx.walker.busy) ctx.walker.teleport(ctx.walker.position.x, ctx.walker.position.z, ctx.walker.yaw);
+    ctx.camera.follow(null);
+    ctx.camera.snap();
+    this.portraitsDirty = true;
+    if (this.book.allDone) {
+      this.finish(true);
+      return;
+    }
+    this.phase = 'play';
+    ctx.hud.objective = 'Still missing things — keep looking! The school run leaves at 7:50.';
+    this.instr('Keep looking!', `${this.book.remaining} still missing`, 2.4);
+  }
+
+  /** PRIMARY / tap during the departure: jump to its end. */
+  private skipDeparture(): void {
+    const ctx = this.ctx!;
+    this.ashLane.stop();
+    this.talk.closeAll();
+    for (const g of GIRLS) {
+      const c = ctx.family.girl(g);
+      c.cancelAction();
+      const home = ctx.world.anchor(GATHER[g]);
+      if (dist2(c.root.position, home) > 0.3) ctx.npcs.placeAt(c, GATHER[g]);
+    }
+    this.endDeparture();
   }
 
   private getInCar(): void {
@@ -883,7 +1007,8 @@ class RushActivity implements Activity {
     this.ashleyCarParent = a.root.parent ?? ctx.scene;
     const seat = car.seats[0]!;
     car.root.add(a.root);
-    a.root.position.set(seat.x, seat.y, seat.z);
+    // Ashley's little car has a low roof: sink her into the seat so her head stays under it.
+    a.root.position.set(seat.x, seat.y - 0.3, seat.z);
     a.root.rotation.set(0, 0, 0);
     a.setPose('drive', { seatHeight: seat.seatHeight });
   }
@@ -910,7 +1035,7 @@ class RushActivity implements Activity {
     const root = car.root;
     k.t += dt;
     if (k.stage === 'reverse') {
-      k.speed = Math.min(3.0, k.speed + dt * 2.2);
+      k.speed = Math.min(4.6, k.speed + dt * 4);
       const du = stepAlong(k.p0, k.c, k.p2, k.u, k.speed * dt, tmpT);
       k.u = du;
       bezier(k.p0, k.c, k.p2, k.u, tmpP);
@@ -927,7 +1052,7 @@ class RushActivity implements Activity {
       }
     } else if (k.stage === 'pause') {
       car.roll(0, 0);
-      if (k.t > 0.55) {
+      if (k.t > 0.3) {
         k.stage = 'forward';
         k.t = 0;
         car.setBrakeLights(false);
@@ -935,7 +1060,7 @@ class RushActivity implements Activity {
         this.talk.say(ctx.family.ashley, 'Beep beep! Bye!', { style: 'shout', mood: 'excited', seconds: 1.8 });
       }
     } else if (k.stage === 'forward') {
-      k.speed = Math.min(9, k.speed + dt * 4.5);
+      k.speed = Math.min(11, k.speed + dt * 7);
       // Drive off along the street, nose away from the house (the direction the tail swung from).
       const dir = Math.sign(k.p2.x - k.c.x) || 1;
       const dx = -dir * k.speed * dt;
@@ -943,7 +1068,7 @@ class RushActivity implements Activity {
       root.rotation.y = forwardYaw(-dir, 0);
       car.roll(k.speed * dt, 0);
       k.away += k.speed * dt;
-      if (k.away > 34) k.stage = 'gone';
+      if (k.away > 26) k.stage = 'gone';
     }
   }
 
@@ -990,6 +1115,7 @@ class RushActivity implements Activity {
     a.setOutfit('day');
     ctx.world.door('front').close();
     this.doorAnim = -1;
+    ctx.world.car('ashley').setDoor(0, 0);
     this.ashleyLeaves();
   }
 
@@ -1001,16 +1127,42 @@ class RushActivity implements Activity {
     this.phase = 'finish';
     this.busy = true;
     this.portraitsDirty = true;
-    ctx.hud.objective = 'Everybody’s ready — out the door we go!';
+    ctx.hud.objective = this.book.allDone ? 'Everybody’s ready — out the door we go!' : 'Time’s up — last-minute finds, then out the door!';
     this.spots.cancelWalk();
     ctx.ui.prompt(null);
     ctx.ui.instruction(null);
     this.main.run(async (s) => {
       const chris = ctx.family.chris;
+      const door = ctx.world.anchor('frontDoorIn');
+      // Whatever Chris is carrying: he hurries it over (it WAS found — no "the whole time" joke for it).
+      const carried = this.book.carried;
+      if (carried) {
+        await s.walkChris(door, { speed: HURRY_SPEED, faceYaw: door.yaw });
+        const c = ctx.family.girl(carried.girl);
+        ctx.walker.face(yawTo(chris.root.position.x, chris.root.position.z, c.root.position.x, c.root.position.z));
+        chris.play('handOff');
+        await s.wait(0.45);
+        this.book.deliverCarried();
+        const r = this.itemRt(carried);
+        chris.setHold('none');
+        if (r) {
+          this.detach(r.prop.root);
+          if (carried.item === 'backpack') {
+            wearBackpack(r.prop.root, c);
+            this.attached.push({ root: r.prop.root, who: c });
+          } else r.prop.root.visible = false;
+          r.task.state = 'done';
+        }
+        ctx.audio.play('deliver');
+        c.socket('overhead').getWorldPosition(v1);
+        ctx.fx.burst('star', v1, { count: 12 });
+        c.play('cheer');
+        this.talk.say(c, 'Just in time!', { style: 'shout', mood: 'excited', seconds: 1.6 });
+        this.portraitsDirty = true;
+        await s.wait(1.2);
+      }
       const turned = this.book.turnUpAll();
       if (turned.length > 0) {
-        // Put down whatever Chris carries (it "turns up" too).
-        chris.setHold('none');
         for (const it of turned) {
           const r = this.itemRt(it);
           if (r) {
@@ -1031,8 +1183,7 @@ class RushActivity implements Activity {
         }
       }
       // Chris: jacket, sneakers, keys — by the front door.
-      const door = ctx.world.anchor('frontDoorIn');
-      await s.walkChris(door, { faceYaw: door.yaw });
+      await s.walkChris(door, { speed: HURRY_SPEED, faceYaw: door.yaw });
       chris.socket('overhead').getWorldPosition(v1);
       v1.y -= 0.9;
       ctx.fx.burst('sparkle', v1, { count: 16, color: PAL.chrisJacket });
@@ -1072,6 +1223,7 @@ class RushActivity implements Activity {
     chris.setHold('none');
     const door: Anchor = ctx.world.anchor('frontDoorIn');
     if (dist2(ctx.walker.position, door) > 1.2) ctx.walker.teleport(door.x, door.z, door.yaw);
+    ctx.world.door('back').close();
     ctx.clock.mode = 'run';
     ctx.ui.portraits(null);
   }
@@ -1084,6 +1236,11 @@ class RushActivity implements Activity {
       seconds: this.endT >= 0 ? this.endT : this.playT,
     };
   }
+}
+
+/** Tap-to-walk targets in Act IV: the house + the backyard (its door stays open all act). */
+function rushWalkable(room: RoomId | null): boolean {
+  return room === 'yard' || insideHouse(room);
 }
 
 export function createRush(): Activity {

@@ -273,7 +273,8 @@ function mouth(sb: SkinBuilder, s: BodySpec, kind: MouthKind): void {
         pts.push([Math.cos(t) * rx, cy + Math.sin(t) * ry]);
       }
       b.extrude(pts, Rh * 0.03, PAL.mouthDark, {});
-      if (kind !== 'o') b.sphere(rx * 0.62, 6, 3, PAL.tongue, { at: [0, cy - ry * 0.52, Rh * 0.01], scale: [1.1, 0.55, 0.2], ink: false });
+      if (kind === 'o') b.sphere(rx * 0.5, 6, 3, PAL.tongue, { at: [0, cy - ry * 0.55, Rh * 0.01], scale: [1.1, 0.5, 0.2], ink: false });
+      else b.sphere(rx * 0.62, 6, 3, PAL.tongue, { at: [0, cy - ry * 0.52, Rh * 0.01], scale: [1.1, 0.55, 0.2], ink: false });
       if (kind === 'yawn') b.sphere(rx * 0.55, 6, 3, PAL.teeth, { at: [0, cy + ry * 0.86, Rh * 0.012], scale: [1.2, 0.22, 0.2], ink: false });
       break;
     }
@@ -281,30 +282,6 @@ function mouth(sb: SkinBuilder, s: BodySpec, kind: MouthKind): void {
       const pc = mixHex(PAL.tongue, PAL.lipLine, 0.45);
       b.torus(w * 0.24, w * 0.12, 3, 9, pc, { at: [0, -w * 0.05, w * 0.03], scale: [1, 0.72, 1], ink: false });
       b.sphere(w * 0.1, 5, 3, PAL.mouthDark, { at: [0, -w * 0.05, w * 0.05], scale: [1, 0.6, 0.4], ink: false });
-      break;
-    }
-    case 'eek': {
-      const hw = w * 1.0;
-      const hh = w * 0.34;
-      const n = 6;
-      const pts: [number, number][] = [];
-      const lift = (x: number) => 0.3 * w * (x / hw) * (x / hw);
-      for (let i = 0; i <= n; i++) {
-        const x = -hw + (2 * hw * i) / n;
-        pts.push([x, -hh + lift(x) * 0.6]);
-      }
-      for (let i = n; i >= 0; i--) {
-        const x = -hw + (2 * hw * i) / n;
-        pts.push([x, hh + lift(x)]);
-      }
-      b.extrude(pts, Rh * 0.03, PAL.teeth, {});
-      const rim = pts.map(([x, y]) => new THREE.Vector3(x, y, Rh * 0.016));
-      b.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim, true), 10, lt * 0.8, 3, true), lip, {});
-      b.box(hw * 1.8, lt * 0.55, lt * 0.5, lip, { at: [0, w * 0.06, Rh * 0.016], ink: false });
-      for (let i = 0; i < 2; i++) {
-        const x = (-0.5 + (i + 1) / 3) * hw * 1.9;
-        b.box(lt * 0.5, hh * 1.7, lt * 0.5, lip, { at: [x, lift(x) * 0.8, Rh * 0.016], ink: false });
-      }
       break;
     }
   }

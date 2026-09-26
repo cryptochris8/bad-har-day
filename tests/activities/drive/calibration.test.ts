@@ -1,14 +1,14 @@
 // Arrival-time calibration (docs/GDD.md §3): a great drive ≈ 7:57, an average one ≈ 8:01, never after 8:05.
 import { describe, expect, it } from 'vitest';
-import { placeEvents } from '../../../src/activities/drive/placement';
+import { DRIVE_FEATURES as F, placeEvents } from '../../../src/activities/drive/placement';
+import { obedient } from './policies';
 import { ACT5_START, arrivalFor, scoreDrive } from '../../../src/activities/drive/scoring';
 import { DriveSim, NO_INPUT, autoInput, type DriveInput } from '../../../src/activities/drive/sim';
 import { generatePlan } from '../../../src/plan';
 import { SCHOOL_DEADLINE, T } from '../../../src/plan/types';
-import { CROSSWALKS, CROSSWALK_STOP, DROPOFF, EVENT_S0, EVENT_S1, INTERSECTIONS, LIGHTS, ROUTE_LENGTH } from '../../../src/world/route/layout';
+import { CROSSWALKS, CROSSWALK_STOP, DROPOFF, LIGHTS, ROUTE_LENGTH } from '../../../src/world/route/layout';
 
 const ROUTE = { length: ROUTE_LENGTH, crosswalks: CROSSWALKS, lights: LIGHTS, dropoff: DROPOFF, crosswalkStop: CROSSWALK_STOP };
-const F = { crosswalks: CROSSWALKS, lights: LIGHTS, intersections: INTERSECTIONS, s0: EVENT_S0, s1: EVENT_S1, guardMax: 470 };
 /** The loading cutscene takes ~10 s of real time. */
 const LOAD_S = 10;
 
@@ -38,9 +38,11 @@ describe('arrival calibration', () => {
   const G = seeds.map((s) => drive(s, great));
   const A = seeds.map((s) => drive(s, average));
   const P = seeds.map((s) => drive(s, passive));
+  // does EXACTLY what the game says, the moment it says it (brakes as soon as "Slow down" shows, waits, …)
+  const O = seeds.map((s) => drive(s, obedient));
 
   it('every drive arrives (the bay pull-in and stop are assisted)', () => {
-    for (const r of [...G, ...A, ...P]) expect(r.sim.arrived).toBe(true);
+    for (const r of [...G, ...A, ...P, ...O]) expect(r.sim.arrived).toBe(true);
   });
 
   it('a great drive ≈ 7:57', () => {
@@ -56,8 +58,22 @@ describe('arrival calibration', () => {
     expect(m - mean(G.map((r) => r.arrival))).toBeGreaterThan(2.5);
   });
 
+  it('an obedient driver (follows every prompt immediately) is never stuck: ≈ 8:00, never in the late wrap-up', () => {
+    const arr = O.map((r) => r.arrival);
+    const m = mean(arr);
+    // eslint-disable-next-line no-console
+    console.log(`obedient driver: mean ${Math.floor(m / 60)}:${(m % 60).toFixed(1)}, latest ${Math.floor(Math.max(...arr) / 60)}:${(Math.max(...arr) % 60).toFixed(1)}`);
+    expect(m).toBeLessThan(T(8, 2.5));
+    for (const r of O) {
+      expect(r.arrival).toBeLessThan(T(8, 3) + 0.5); // never needed the hurry
+      expect(r.score.stars).toBeGreaterThanOrEqual(2);
+      expect(r.score.flags).toContain('drive:guard');
+      expect(r.sim.bumps).toBe(0);
+    }
+  });
+
   it('nobody is ever later than 8:05 — not even a driver who touches nothing', () => {
-    for (const r of [...G, ...A, ...P]) {
+    for (const r of [...G, ...A, ...P, ...O]) {
       expect(r.arrival).toBeLessThanOrEqual(SCHOOL_DEADLINE);
       expect(r.arrival).toBeGreaterThan(ACT5_START);
     }

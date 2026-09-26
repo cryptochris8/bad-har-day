@@ -72,11 +72,15 @@ export function generatePlan(seed: number, opts: PlanOpts = {}): DayPlan {
   const rng = new Rng(seed >>> 0);
   const weather: Weather = rng.weighted<Weather>(['clear', 'cloudy', 'drizzle'], (w) => (w === 'clear' ? 0.6 : w === 'cloudy' ? 0.25 : 0.15));
 
+  // 2–3 of the optional chores (4–5 chores in all): Act I should be 3–5 real minutes (docs/GDD.md §3).
   const optional: ChoreId[] = [];
-  if (rng.chance(0.65)) optional.push('lunch');
-  if (rng.chance(0.5)) optional.push('trash');
-  if (rng.chance(0.6)) optional.push('dishes');
-  if (optional.length === 0) optional.push(rng.pick<ChoreId>(['lunch', 'trash', 'dishes']));
+  if (rng.chance(0.7)) optional.push('lunch');
+  if (rng.chance(0.55)) optional.push('trash');
+  if (rng.chance(0.65)) optional.push('dishes');
+  while (optional.length < 2) {
+    const missing = (['lunch', 'trash', 'dishes'] as ChoreId[]).filter((c) => !optional.includes(c));
+    optional.push(rng.pick(missing));
+  }
   const chores: ChoreId[] = ['dog', 'coffee', ...shuffle(rng, optional)];
 
   const dogQuirk = rng.pick(DOG_QUIRKS);

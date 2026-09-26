@@ -9,7 +9,8 @@
 import * as THREE from 'three';
 import type { ActivityContext } from '../types';
 import type { Vec3Like } from '../../render/types';
-import { clamp01, easeOutBack, hop, pickOnRay, smooth, type PickSphere } from './logic';
+import { effectiveFov } from '../../render/camera';
+import { clamp01, easeOutBack, hop, pickOnRay, portraitAmount, portraitGoal, smooth, type PickSphere, type PortraitFraming } from './logic';
 
 // ── pointer ray ──────────────────────────────────────────────────────────────
 
@@ -293,6 +294,18 @@ export class StationChris {
 /** A reusable camera goal (no per-call allocation from the activity's side). */
 export class Shot {
   readonly goal = { position: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 }, fov: 40 };
+  /** The goal actually sent to the camera (portrait-adapted). */
+  private readonly out = { position: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 }, fov: 40 };
+  private framing: PortraitFraming | null = null;
+  private lastAspect = 0;
+  private lastStiff = 3.2;
+  private live = false;
+
+  /** How to re-frame this shot on tall (portrait) screens. */
+  portrait(f: PortraitFraming): this {
+    this.framing = f;
+    return this;
+  }
 
   set(px: number, py: number, pz: number, tx: number, ty: number, tz: number, fov: number): this {
     const g = this.goal;
@@ -312,8 +325,49 @@ export class Shot {
   }
 
   apply(ctx: ActivityContext, stiffness = 3.2): void {
-    ctx.camera.shot(this.goal, stiffness);
+    const cam = ctx.camera.camera;
+    const aspect = cam.aspect > 0 ? cam.aspect : 16 / 9;
+    this.lastAspect = aspect;
+    this.lastStiff = stiffness;
+    this.live = true;
+    const g = this.goal;
+    const o = this.out;
+    o.fov = g.fov;
+    if (this.framing && portraitAmount(aspect) > 0) portraitGoal(g, aspect, effectiveFov(g.fov, aspect), this.framing, o);
+    else {
+      o.position.x = g.position.x;
+      o.position.y = g.position.y;
+      o.position.z = g.position.z;
+      o.target.x = g.target.x;
+      o.target.y = g.target.y;
+      o.target.z = g.target.z;
+    }
+    ctx.camera.shot(o, stiffness);
   }
+
+  /** Re-apply when the screen was rotated / resized while this shot is the active one. */
+  refresh(ctx: ActivityContext): void {
+    if (!this.live) return;
+    const a = ctx.camera.camera.aspect;
+    if (a > 0 && Math.abs(a - this.lastAspect) > 0.04) this.apply(ctx, this.lastStiff);
+  }
+
+  /** Another shot took over. */
+  release(): void {
+    this.live = false;
+  }
+}
+
+/** Narrow portrait (phones held upright): the UI lifts its centred prompt bar above the thumbs — right onto the
+ * close-up subject. Stations drop that prompt there (touch buttons + the side card carry the glyphs). */
+export function narrowPortrait(ctx: ActivityContext): boolean {
+  const a = ctx.camera.camera.aspect;
+  return a > 0 && a < 0.8;
+}
+
+/** ctx.ui.prompt, except on narrow portrait screens where it would sit on top of the station. */
+export function stationPrompt(ctx: ActivityContext, p: Parameters<ActivityContext['ui']['prompt']>[0]): void {
+  ctx.ui.prompt(p && narrowPortrait(ctx) ? null : p);
 }
 
 // ── small helpers ────────────────────────────────────────────────────────────

@@ -16,12 +16,13 @@ import type { BubbleHandle, PromptSpec } from '../../ui/types';
 import type { CarHandle, World } from '../../world/types';
 import { clockLabel } from '../../game/clock';
 import { routeBuilder, type RouteWithExtras } from '../../world/route';
-import { CROSSWALKS, CROSSWALK_STOP, EVENT_S0, EVENT_S1, INTERSECTIONS, LIGHTS } from '../../world/route/layout';
+import { CROSSWALK_STOP } from '../../world/route/layout';
 import { ARRIVE_LINE, CHRIS_BYE, CUE_LINES, Chatter, HURRY_LINE, IDLE_LINES, SPOT_LINES, START_LINES, type Line } from './chatter';
-import { Ball, CrossingGuard, GarbageTruck, Geese, GreenLights, Jogger, Puddle, Sprinkler, type Cue } from './events';
+import type { Cue } from './events';
 import { DriveHud } from './hud';
+import { advise, type Advice, type AdviceKind } from './guide';
 import { TUNE, headingOf, steerOf } from './model';
-import { placeEvents, type Placed } from './placement';
+import { DRIVE_FEATURES, placeEvents, type Placed } from './placement';
 import { DRIVE_RATE, HURRY_AT, LOAD_RATE, SKIP_ARRIVAL, scoreDrive } from './scoring';
 import { DriveSim, bayStopS, type DriveInput } from './sim';
 import { DriveView } from './view';
@@ -36,16 +37,22 @@ const SCHEME_DRIVE: ControlScheme = {
   alt: { label: 'HONK', icon: 'honk' },
 };
 
-// prompts (constant objects: the UI is only told when the reference changes)
-const P_GAS: PromptSpec = { text: 'Hold for GAS — faster!', slot: 'primary', hold: true };
-const P_BRAKE_LINE: PromptSpec = { text: 'BRAKE — stop at the line', slot: 'secondary', hold: true };
-const P_BRAKE: PromptSpec = { text: 'BRAKE!', slot: 'secondary', hold: true };
-const P_HONK: PromptSpec = { text: 'Honk politely (or wait)', slot: 'alt' };
-const P_LANE: PromptSpec = { text: 'Change lanes to pass', slot: 'move' };
-const P_SPLASH: PromptSpec = { text: 'Steer into the right lane!', slot: 'move' };
-const P_BAY: PromptSpec = { text: 'Steer right into the DROP-OFF lane', slot: 'move' };
-const P_STOP_SCHOOL: PromptSpec = { text: 'BRAKE by the school door', slot: 'secondary', hold: true };
-const P_GREEN: PromptSpec = { text: 'Hold GAS to catch the green!', slot: 'primary', hold: true };
+// prompts (constant objects: the UI is only told when the reference changes). Short texts: they must fit a
+// phone's prompt pill. The objective line (HUD, top-left) carries the longer explanation.
+const PROMPTS: Readonly<Record<AdviceKind, PromptSpec | null>> = {
+  gas: { text: 'Hold to go faster', slot: 'primary', hold: true },
+  green: { text: 'Catch the green!', slot: 'primary', hold: true },
+  slow: { text: 'Slow down', slot: 'secondary', hold: true },
+  stopLine: { text: 'Stop at the line', slot: 'secondary', hold: true },
+  brake: { text: 'BRAKE!', slot: 'secondary', hold: true },
+  honk: { text: 'Honk politely', slot: 'alt' },
+  lane: { text: 'Change lanes', slot: 'move' },
+  splash: { text: 'Right lane!', slot: 'move' },
+  bay: { text: 'Drop-off lane', slot: 'move' },
+  stopSchool: { text: 'Stop by the door', slot: 'secondary', hold: true },
+  wait: null,
+  none: null,
+};
 
 /** Routes are cached per world (the minivan stays parked on it behind the report card). */
 const ROUTES = new WeakMap<World, RouteWithExtras>();
@@ -118,6 +125,8 @@ export class DriveActivity implements Activity {
   private idleI = 0;
   private lastLane = 1;
   private prompt: PromptSpec | null = null;
+  private readonly advice: Advice = { kind: 'gas', objective: '' };
+  private waveT = -1;
   private hurryShown = false;
   private readonly input: DriveInput = { gas: 0, brake: 0, lane: 0, honk: false };
   private readonly resolved: boolean[] = [];
@@ -141,14 +150,7 @@ export class DriveActivity implements Activity {
     clock.mode = 'run';
     clock.rate = LOAD_RATE;
     // events along the route (the route layout is fixed; houses/colours vary with the seed)
-    this.placed = placeEvents(ctx.plan.drive, {
-      crosswalks: CROSSWALKS,
-      lights: LIGHTS,
-      intersections: INTERSECTIONS,
-      s0: EVENT_S0,
-      s1: EVENT_S1,
-      guardMax: 470,
-    });
+    this.placed = placeEvents(ctx.plan.drive, DRIVE_FEATURES);
     // reuse / (re)build the route incrementally during the loading cutscene
     const seed = (ctx.plan.cosmeticSeed ^ 0x5eed) >>> 0;
     const cached = ROUTES.get(world);
@@ -362,6 +364,11 @@ export class DriveActivity implements Activity {
           return true;
         },
         arrival: () => this.arrival,
+        advice: () => `${this.advice.kind}: ${this.advice.objective}`,
+        guard: () => {
+          const g = this.sim?.events.find((e) => e.kind === 'crossingGuard') as { phase?: string; reaction?: string; line?: number } | undefined;
+          return g && this.sim ? { phase: g.phase, reaction: g.reaction, toLine: Math.round((g.line ?? 0) - this.sim.front) } : null;
+        },
         state: () => ({
           t: +this.phaseT.toFixed(2),
           girls: GIRLS.map((g) => `${g}:${this.girlState.get(g)}`).join(' '),
@@ -781,53 +788,13 @@ export class DriveActivity implements Activity {
     c.camera.shot(g, snap ? 100 : 5.5);
   }
 
-  /** Objective line + glyph prompt for what's ahead. */
+  /** Objective line + glyph prompt for what's ahead (see guide.ts). */
   private guide(c: ActivityContext, sim: DriveSim): void {
-    const car = sim.car;
-    const f = sim.front;
-    const D = sim.route.dropoff;
-    let obj = 'Drive to school — GAS to go faster, BRAKE to stop';
-    let p: PromptSpec = P_GAS;
-    if (f >= D.s0 - 48) {
-      obj = 'Maple Grove Elementary! Pull into the drop-off lane';
-      p = sim.bayOpen && car.lane < 2 ? P_BAY : car.lane === 2 ? P_STOP_SCHOOL : P_GAS;
-    } else {
-      for (const e of sim.events) {
-        if (e.done && !(e instanceof CrossingGuard && e.phase !== 'clear')) continue;
-        const ahead = e.s - f;
-        if (ahead > e.spotAt() || ahead < -8) continue;
-        if (e instanceof CrossingGuard) {
-          if (e.phase === 'wait') break;
-          obj = e.reaction === 'none' ? 'Crossing guard! Stop at the line' : 'Wait while the kids cross';
-          p = e.reaction === 'none' ? P_BRAKE_LINE : P_GAS;
-        } else if (e instanceof Geese) {
-          obj = 'Geese crossing! Wait — or honk politely';
-          p = P_HONK;
-        } else if (e instanceof GreenLights) {
-          if (e.color === 'green' && !e.passedOn) {
-            obj = 'Green light ahead — catch it!';
-            p = P_GREEN;
-          } else if (!e.passedOn) {
-            obj = e.color === 'red' ? 'Red light — stop at the line' : 'Yellow! Get ready to stop';
-            p = P_BRAKE_LINE;
-          }
-        } else if (e instanceof Sprinkler || e instanceof Puddle) {
-          const inRight = car.lane >= 1;
-          obj = e instanceof Sprinkler ? (inRight ? 'Sprinkler! Here we go — wheee!' : 'Sprinkler! Drive through it (right lane)') : inRight ? 'Big puddle! Splash time!' : 'Big puddle! Splash through it (right lane)';
-          p = inRight ? P_GAS : P_SPLASH;
-        } else if (e instanceof Jogger || e instanceof GarbageTruck) {
-          const o = e instanceof Jogger ? e.jogger : e.truck;
-          const inLane = o.onRoad && Math.abs(o.x - car.x) < 2.2 && o.s > car.s - 3;
-          obj = e instanceof Jogger ? (inLane ? 'Jogger with a stroller — change lanes to pass' : 'Passing the jogger — wave hello!') : inLane ? 'Garbage truck! Change lanes to pass' : 'Passing the garbage truck!';
-          p = inLane ? P_LANE : P_GAS;
-        } else if (e instanceof Ball) {
-          obj = e.launched ? 'BALL! Brake!' : 'Kids playing ball — careful';
-          p = e.launched ? P_BRAKE : P_GAS;
-        }
-        break;
-      }
-    }
-    c.hud.objective = obj;
+    const a = advise(sim, this.advice);
+    c.hud.objective = a.objective;
+    // Portrait phones: the prompt pill would float over the van — the touch buttons + objective line say it all.
+    const portraitTouch = c.input.lastDevice === 'touch' && c.camera.camera.aspect < 1;
+    const p = portraitTouch ? null : PROMPTS[a.kind];
     if (p !== this.prompt) {
       this.prompt = p;
       c.ui.prompt(p);
@@ -1104,6 +1071,7 @@ export class DriveActivity implements Activity {
         girl.setExpression('joy');
         this.tweens.push({ t: 0, dur: 0.3 + i * 0.35, step: () => {}, done: () => this.say(c, { ...ARRIVE_LINE, who: g2 }, true) });
       });
+      this.waveT = t;
       c.audio.play('kidsYay', { delay: 0.2 });
       c.audio.play('schoolBell', { delay: 0.6 });
       const door = route.extras.schoolDoor;
@@ -1123,13 +1091,14 @@ export class DriveActivity implements Activity {
         },
       });
     }
-    if (this.arriveStep === 5 && t > 9.2) {
+    // the end card comes once the goodbye wave has had its moment (and sits below the school door)
+    if (this.arriveStep === 5 && t > Math.max(8, this.waveT + 3)) {
       this.arriveStep = 6;
       this.hud?.showEndCard(clockLabel(this.arrival));
       c.audio.play('banner');
       c.fx.fireworks(4, tmpV2.copy(route.extras.flagTop).setY(5));
     }
-    if (this.arriveStep === 6 && t > 12.4) {
+    if (this.arriveStep === 6 && t > Math.max(11.2, this.waveT + 6.2)) {
       this.phase = 'done';
       this.finished = true;
     }

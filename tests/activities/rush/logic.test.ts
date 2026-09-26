@@ -13,8 +13,13 @@ import {
   emptyQuip,
   foundLine,
   forwardYaw,
+  HUG_RING,
+  LEAD_HOP,
+  LEAD_WAIT,
   needLine,
+  pathLength,
   pickHint,
+  pointAlong,
   reverseYaw,
   rushFlags,
   rushStars,
@@ -78,7 +83,7 @@ describe('RushBook — search, carry, deliver', () => {
     expect(b.wants('addy')).toHaveLength(2);
   });
 
-  it('everything delivered → allDone; turnUpAll handles leftovers (incl. the carried one)', () => {
+  it('everything delivered → allDone; at the wrap-up the carried item is DELIVERED and only hidden ones turn up', () => {
     const b = new RushBook(MISSING);
     for (const m of MISSING) {
       b.look(m.spot);
@@ -86,14 +91,23 @@ describe('RushBook — search, carry, deliver', () => {
     }
     expect(b.allDone).toBe(true);
     expect(b.turnUpAll()).toHaveLength(0);
+    expect(b.deliverCarried()).toBeNull();
 
     const c = new RushBook(MISSING);
     c.look('couchCushion'); // carrying the shoe
-    const up = c.turnUpAll();
-    expect(up.map((i) => i.item).sort()).toEqual(['backpack', 'hairTie', 'libraryBook', 'shoe']);
+    expect(c.deliverCarried()?.item).toBe('shoe');
     expect(c.carried).toBeNull();
+    const up = c.turnUpAll();
+    expect(up.map((i) => i.item).sort()).toEqual(['backpack', 'hairTie', 'libraryBook']);
     expect(c.allDone).toBe(true);
-    expect(c.delivered).toBe(0);
+    expect(c.delivered).toBe(1);
+  });
+
+  it('turnUpAll never turns up the item in Chris’s hands', () => {
+    const c = new RushBook(MISSING);
+    c.look('dogBed');
+    expect(c.turnUpAll().some((i) => i.item === 'libraryBook')).toBe(false);
+    expect(c.carried?.state).toBe('carried');
   });
 
   it('undiscovered = still hidden (not carried)', () => {
@@ -146,14 +160,48 @@ describe('the dog helps', () => {
     expect(d.update(DOG_HINT_AFTER * 2, false, true)).toBe(false);
   });
 
-  it('pickHint goes to the spot furthest from Chris', () => {
+  it('pickHint leads to the NEAREST undiscovered spot (keeps the hint on screen)', () => {
     const c = [
       { x: 1, z: 0, id: 'a' },
       { x: 10, z: 0, id: 'b' },
       { x: -3, z: 0, id: 'c' },
     ];
-    expect(pickHint(c, 0, 0)?.id).toBe('b');
+    expect(pickHint(c, 0, 0)?.id).toBe('a');
+    expect(pickHint(c, 9, 0)?.id).toBe('b');
     expect(pickHint([], 0, 0)).toBeNull();
+  });
+
+  it('the dog leads in short hops along the nav path and waits for Chris', () => {
+    const path = [
+      { x: 0, z: 0 },
+      { x: 3, z: 0 },
+      { x: 3, z: 4 },
+    ];
+    expect(pathLength(path)).toBeCloseTo(7, 6);
+    const o = { x: 0, z: 0 };
+    expect(pointAlong(path, 1.5, o)).toEqual({ x: 1.5, z: 0 });
+    pointAlong(path, 5, o);
+    expect(o.x).toBeCloseTo(3, 6);
+    expect(o.z).toBeCloseTo(2, 6);
+    expect(pointAlong(path, 99, o)).toEqual({ x: 3, z: 4 });
+    expect(pointAlong(path, -1, o)).toEqual({ x: 0, z: 0 });
+    // a hop is a few steps, and he waits while Chris is a bit further than that
+    expect(LEAD_HOP).toBeGreaterThan(2);
+    expect(LEAD_HOP).toBeLessThan(5);
+    expect(LEAD_WAIT).toBeGreaterThan(1.5);
+  });
+});
+
+describe('the group hug', () => {
+  it('three girls stand around Ashley, in front of her, not on top of each other', () => {
+    expect(HUG_RING).toHaveLength(3);
+    for (const o of HUG_RING) {
+      expect(o.z).toBeLessThan(0); // she faces −Z (toward the girls)
+      expect(Math.hypot(o.x, o.z)).toBeGreaterThan(0.45);
+      expect(Math.hypot(o.x, o.z)).toBeLessThan(0.9);
+    }
+    for (let i = 0; i < 3; i++)
+      for (let j = i + 1; j < 3; j++) expect(Math.hypot(HUG_RING[i]!.x - HUG_RING[j]!.x, HUG_RING[i]!.z - HUG_RING[j]!.z)).toBeGreaterThan(0.5);
   });
 });
 

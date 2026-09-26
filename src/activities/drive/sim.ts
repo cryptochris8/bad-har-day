@@ -195,7 +195,11 @@ export class DriveSim implements SimCtx {
 
   /** Next unresolved event ahead (for the "next up" chip), or null. */
   nextEvent(): DriveEventLogic | null {
-    for (const e of this.events) if (!e.done) return e;
+    for (const e of this.events) {
+      if (!e.done) return e;
+      // the crossing guard stays "next" until she's back on the sidewalk
+      if (e instanceof CrossingGuard && e.phase !== 'clear' && e.phase !== 'wait') return e;
+    }
     return null;
   }
 

@@ -12,11 +12,11 @@ describe('generatePlan', () => {
     expect(generatePlan(1234)).not.toEqual(generatePlan(1235));
   });
 
-  it('always has dog + coffee first and 3..5 distinct chores', () => {
+  it('always has dog + coffee first and 4..5 distinct chores', () => {
     for (const s of SEEDS) {
       const p = generatePlan(s);
       expect(p.chores.slice(0, 2)).toEqual(['dog', 'coffee']);
-      expect(p.chores.length).toBeGreaterThanOrEqual(3);
+      expect(p.chores.length).toBeGreaterThanOrEqual(4);
       expect(p.chores.length).toBeLessThanOrEqual(5);
       expect(new Set(p.chores).size).toBe(p.chores.length);
     }

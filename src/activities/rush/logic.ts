@@ -126,16 +126,24 @@ export class RushBook {
     return this.items.filter((i) => i.state === 'hidden');
   }
 
-  /** Wrap-up: everything still missing "turns up". Returns those items. */
+  /** Wrap-up: Chris hands over what he's carrying (it was found — no "the whole time" joke for it). */
+  deliverCarried(): RushItem | null {
+    const it = this.carried;
+    if (!it) return null;
+    it.state = 'delivered';
+    this.carried = null;
+    return it;
+  }
+
+  /** Wrap-up: everything still HIDDEN "turns up" (deliver the carried one first). Returns those items. */
   turnUpAll(): RushItem[] {
     const out: RushItem[] = [];
     for (const i of this.items) {
-      if (i.state === 'hidden' || i.state === 'carried') {
+      if (i.state === 'hidden') {
         i.state = 'turnedUp';
         out.push(i);
       }
     }
-    this.carried = null;
     return out;
   }
 }
@@ -173,19 +181,62 @@ export class DogHelper {
   }
 }
 
-/** Which undiscovered item the dog digs at: the one furthest from Chris (the helpful one). */
+/** Which undiscovered item the dog leads Chris to: the NEAREST one (so the hint stays on screen). */
 export function pickHint<T extends { x: number; z: number }>(cands: readonly T[], chrisX: number, chrisZ: number): T | null {
   let best: T | null = null;
-  let bestD = -1;
+  let bestD = Infinity;
   for (const c of cands) {
     const d = Math.hypot(c.x - chrisX, c.z - chrisZ);
-    if (d > bestD) {
+    if (d < bestD) {
       best = c;
       bestD = d;
     }
   }
   return best;
 }
+
+/** The point `dist` metres along a polyline path (clamped to its end). Writes `out`. */
+export function pointAlong(path: readonly { x: number; z: number }[], dist: number, out: P2): P2 {
+  if (path.length === 0) return out;
+  let left = Math.max(0, dist);
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1]!;
+    const b = path[i]!;
+    const seg = Math.hypot(b.x - a.x, b.z - a.z);
+    if (seg >= left && seg > 1e-9) {
+      const k = left / seg;
+      out.x = a.x + (b.x - a.x) * k;
+      out.z = a.z + (b.z - a.z) * k;
+      return out;
+    }
+    left -= seg;
+  }
+  const last = path[path.length - 1]!;
+  out.x = last.x;
+  out.z = last.z;
+  return out;
+}
+
+/** Length of a polyline path. */
+export function pathLength(path: readonly { x: number; z: number }[]): number {
+  let len = 0;
+  for (let i = 1; i < path.length; i++) len += Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z);
+  return len;
+}
+
+/** The dog leads in hops of this length and waits (barking) until Chris is within LEAD_WAIT of it. */
+export const LEAD_HOP = 3.2;
+export const LEAD_WAIT = 2.6;
+
+/** Ashley's departure can be skipped (PRIMARY / tap) after this much of it has played. */
+export const DEPART_SKIP_AFTER = 0.8;
+
+/** Where the three girls stand around Ashley for the group hug (offsets from her, she faces −Z). */
+export const HUG_RING: readonly { x: number; z: number }[] = [
+  { x: -0.62, z: -0.42 },
+  { x: 0, z: -0.66 },
+  { x: 0.62, z: -0.42 },
+];
 
 export interface RushScoreInput {
   total: number;

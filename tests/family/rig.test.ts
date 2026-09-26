@@ -243,18 +243,44 @@ describe('character behaviour', () => {
     c.dispose();
   });
 
-  it('eek swaps one eye to a squint and shows the teeth grin', () => {
+  it("eek is a playful eep (both eyes wide open, round mouth), with a little head pop", () => {
     const c = mk('heidi');
-    c.setExpression('eek');
-    step(c, 0.3);
+    step(c, 0.5);
     const bones = c.body.skeleton.bones;
-    const byName = (n: string) => bones.find((b) => b.name === n)!;
-    // One of the eyes' open part is hidden, the other visible.
-    const openL = bones[19]!;
-    const openR = bones[29]!;
-    expect(Math.min(openL.scale.x, openR.scale.x)).toBeLessThan(0.01);
-    expect(Math.max(openL.scale.x, openR.scale.x)).toBeGreaterThan(0.99);
-    expect(byName('hairTop')).toBeTruthy();
+    const head = bones[4]!;
+    c.setExpression('eek');
+    let maxPop = 0;
+    const base = head.rotation.x;
+    for (let i = 0; i < 20; i++) {
+      c.update(1 / 60);
+      maxPop = Math.max(maxPop, Math.abs(head.rotation.x - base));
+    }
+    step(c, 0.5);
+    for (const open of [bones[19]!, bones[29]!]) expect(open.scale.x).toBeGreaterThan(0.99);
+    for (const sq of [bones[19 + 7]!, bones[29 + 7]!]) expect(sq.scale.x).toBeLessThan(0.01);
+    // Lids fully open.
+    expect(bones[19 + 2]!.scale.y).toBeLessThan(0.05);
+    const o = bones.find((b) => b.name === 'bone' + (39 + 4)) ?? bones[39 + 4]!;
+    expect(o.scale.x).toBeGreaterThan(0.5); // the 'o' mouth is showing
+    expect(maxPop).toBeGreaterThan(0.02);
+    c.setExpression('dramatic');
+    step(c, 0.5);
+    for (const open of [bones[19]!, bones[29]!]) expect(open.scale.x).toBeGreaterThan(0.99);
+    // Pupils rolled up toward the sky.
+    expect(bones[19 + 1]!.position.y).toBeGreaterThan(0);
+    c.dispose();
+  });
+
+  it('noooo is a theatrical swoon: back of the hand to the forehead, head thrown back', () => {
+    const c = mk('addy');
+    const d = c.play('noooo');
+    step(c, d * 0.5);
+    const hand = world(c.socket('handR'));
+    const head = world(c.socket('head'));
+    expect(hand.distanceTo(head)).toBeLessThan(SPECS.twin.headRy * 1.6);
+    expect(hand.y).toBeGreaterThan(head.y);
+    expect(c.body.skeleton.bones[4]!.rotation.x).toBeLessThan(-0.2);
+    expect(c.expression).toBe('dramatic');
     c.dispose();
   });
 

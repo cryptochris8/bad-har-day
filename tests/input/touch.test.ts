@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_STICK } from '../../src/input/joystick';
 import { TOUCH_STYLE_ID } from '../../src/input/touchStyles';
+import { isTap } from '../../src/input/touch';
 import { SCHEMES, createHarness, down, pointer, type Harness } from './helpers';
 
 let h: Harness;
@@ -317,5 +318,35 @@ describe('layout', () => {
     Object.defineProperty(tm2, 'touches', { value: [{}] });
     document.body.dispatchEvent(tm2);
     expect(tm2.defaultPrevented).toBe(false);
+  });
+});
+
+describe('taps through the joystick zone', () => {
+  it('isTap: short and still only', () => {
+    expect(isTap(120, 3)).toBe(true);
+    expect(isTap(400, 3)).toBe(false);
+    expect(isTap(120, 30)).toBe(false);
+  });
+
+  it('a quick still tap on the zone is forwarded to the element underneath; a drag is not', () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const got: string[] = [];
+    for (const t of ['pointerdown', 'pointerup', 'click']) target.addEventListener(t, () => got.push(t));
+    const orig = document.elementFromPoint;
+    document.elementFromPoint = () => target;
+    try {
+      pointer(zone(), 'pointerdown', { pointerId: 1, clientX: 150, clientY: 250 });
+      pointer(zone(), 'pointerup', { pointerId: 1, clientX: 151, clientY: 250 });
+      expect(got).toEqual(['pointerdown', 'pointerup', 'click']);
+      got.length = 0;
+      pointer(zone(), 'pointerdown', { pointerId: 2, clientX: 150, clientY: 250 });
+      pointer(zone(), 'pointermove', { pointerId: 2, clientX: 150, clientY: 250 - R });
+      pointer(zone(), 'pointerup', { pointerId: 2, clientX: 150, clientY: 250 - R });
+      expect(got).toEqual([]);
+    } finally {
+      document.elementFromPoint = orig;
+      target.remove();
+    }
   });
 });

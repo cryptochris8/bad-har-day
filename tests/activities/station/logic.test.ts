@@ -7,6 +7,8 @@ import {
   easeOutBack,
   hop,
   pickOnRay,
+  portraitAmount,
+  portraitGoal,
   shuffled,
   smooth,
   starsFrom,
@@ -163,5 +165,32 @@ describe('stars + misc', () => {
     expect(yawToward(0, 0, 0, 1)).toBeCloseTo(0);
     expect(Math.abs(yawToward(0, 0, 0, -1))).toBeCloseTo(Math.PI);
     expect(yawToward(0, 0, 1, 0)).toBeCloseTo(Math.PI / 2);
+  });
+});
+
+describe('portrait framing', () => {
+  const g = { position: { x: 0, y: 1, z: 2 }, target: { x: 0, y: 0.5, z: 0 } };
+  const out = () => ({ position: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 } });
+  it('only kicks in on tall screens', () => {
+    expect(portraitAmount(16 / 9)).toBe(0);
+    expect(portraitAmount(1)).toBe(0);
+    expect(portraitAmount(0.5)).toBe(1);
+    expect(portraitAmount(0.3)).toBe(1);
+    expect(portraitAmount(0.7)).toBeCloseTo(0.5);
+    expect(portraitAmount(Number.NaN)).toBe(0);
+    const o = portraitGoal(g, 16 / 9, 40, { zoom: 0.5, lift: 0.3, left: 0.2 }, out());
+    expect(o.position).toEqual(g.position);
+    expect(o.target).toEqual(g.target);
+  });
+  it('moves in along the view line, then slides down (subject rises) and right (subject moves left)', () => {
+    const o = portraitGoal(g, 0.46, 60, { zoom: 0.5, lift: 0.3, left: 0.2 }, out());
+    const d0 = Math.hypot(2, 0.5);
+    const d1 = Math.hypot(o.position.x - o.target.x, o.position.y - o.target.y, o.position.z - o.target.z);
+    expect(d1).toBeCloseTo(d0 * 0.5, 5);
+    expect(o.target.y).toBeLessThan(g.target.y);
+    expect(o.target.x).toBeGreaterThan(g.target.x);
+    // camera and target move together: the view direction is unchanged
+    expect(o.position.y - o.target.y).toBeCloseTo((g.position.y - g.target.y) * 0.5, 5);
+    expect(o.target.z).toBe(g.target.z);
   });
 });

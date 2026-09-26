@@ -158,23 +158,30 @@ function build(e: Expression, flavor: FaceFlavor): FaceTarget {
       f.headZ = 0.12;
       break;
     case 'eek':
-      f.eyeL = 'squeeze';
-      f.eyeR = 'open';
-      f.lidR = 0.38;
-      f.lowLid = 0.3;
-      f.mouth = 'eek';
-      f.browAsym = 0.16;
-      f.browTilt = -0.12;
-      f.blush = 1.15;
-      f.headX = 0.04;
+      // Playful "eep! oops!" (brush snag) — NOT a wince: eyes pop wide (the right one extra wide),
+      // brows up, small round mouth, cheeky head tilt (+ a tiny pop from the rig).
+      f.lid = -1;
+      f.lowLid = 0;
+      f.mouth = 'o';
+      f.mouthScale = 0.85;
+      f.browY = 0.26;
+      f.browAsym = -0.1;
+      f.browTilt = -0.1;
+      f.pupil = 0.82;
+      f.blush = 1.25;
+      f.headX = -0.04;
       f.headZ = -0.1;
       break;
     case 'dramatic':
-      f.eyeL = f.eyeR = 'squeeze';
-      f.mouth = 'yawn';
-      f.mouthScale = 1.12;
-      f.browY = 0.32;
-      f.browTilt = -0.5;
+      // Theatrical "nooo!": eyes wide and rolled up to the sky, brows high, a big round O.
+      f.lid = -1;
+      f.lowLid = 0;
+      f.mouth = 'o';
+      f.mouthScale = 1.75;
+      f.browY = 0.36;
+      f.browTilt = -0.22;
+      f.pupil = 0.9;
+      f.pupilY = 1;
       f.blush = 1.0;
       f.headX = -0.25;
       break;

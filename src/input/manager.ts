@@ -243,9 +243,11 @@ export function createInputManager(opts: InputOptions, env: InputEnv): InputMana
     if (isEditable(e.target) && !allowedWhileTyping(role)) return;
     e.preventDefault();
     if (role === 'prevTab' || role === 'nextTab') {
-      if (mode === 'gameplay' && !e.repeat) {
-        if (role === 'prevTab') kbPrev = true;
-        else kbNext = true;
+      if (!e.repeat) {
+        if (mode === 'gameplay') {
+          if (role === 'prevTab') kbPrev = true;
+          else kbNext = true;
+        } else pushMenu(role === 'prevTab' ? 'prev' : 'next'); // menus: Q / R switch tabs (like L1 / R1)
       }
       return;
     }

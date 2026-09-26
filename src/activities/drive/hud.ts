@@ -290,23 +290,24 @@ export class DriveHud {
 
   showEndCard(arrival: string): void {
     if (this.end) return;
+    // bottom of the screen: the girls wave "BYE! LOVE YOU!" at the school door in the middle of the shot
     const wrap = document.createElement('div');
-    wrap.className = 'bhd-center';
-    wrap.style.pointerEvents = 'none';
+    wrap.style.cssText =
+      'position:absolute;left:0;right:0;bottom:calc(18px + var(--bhd-safe-b, 0px));display:flex;justify-content:center;pointer-events:none;padding:0 12px;';
     const card = document.createElement('div');
     card.className = 'bhd-panel bhd-pop';
-    card.style.cssText = 'padding:22px 30px 18px;max-width:min(620px,88vw);text-align:center;pointer-events:none;transform:rotate(-1deg);';
+    card.style.cssText = 'padding:14px 26px 12px;max-width:min(600px,92vw);text-align:center;pointer-events:none;';
     const hearts = document.createElement('div');
     hearts.textContent = '♥ ♥ ♥';
-    hearts.style.cssText = 'color:var(--bhd-heart,#ff6b8a);font-size:22px;letter-spacing:0.3em;margin-bottom:6px;';
+    hearts.style.cssText = 'color:var(--bhd-heart,#ff6b8a);font-size:18px;letter-spacing:0.3em;margin-bottom:4px;';
     const title = document.createElement('div');
     title.className = 'bhd-display';
     title.textContent = 'Somehow, everybody makes it out the door.';
-    title.style.cssText = 'font-size:clamp(24px,4.6vw,42px);line-height:1.12;color:var(--bhd-plum);';
+    title.style.cssText = 'font-size:clamp(20px,3.6vw,34px);line-height:1.12;color:var(--bhd-plum);';
     const tag = document.createElement('div');
     tag.className = 'bhd-tag bhd-tag--mint';
     tag.textContent = `ARRIVED ${arrival}`;
-    tag.style.marginTop = '12px';
+    tag.style.marginTop = '8px';
     card.append(hearts, title, tag);
     wrap.appendChild(card);
     this.root.appendChild(wrap);

@@ -189,3 +189,38 @@ export function autoPack(p: Packing, available: readonly FoodKind[], favorites: 
   }
   return moves;
 }
+
+/** Can this food (or love note) still go into at least one box? */
+export function fitsSomewhere(p: Packing, kind: FoodKind): boolean {
+  const cat = FOOD_CATEGORY[kind];
+  return GIRLS.some((g) => (cat === 'extra' ? !p[g].note : p[g][cat] === null));
+}
+
+/**
+ * Where the keyboard / gamepad cursor should snap next: an unpacked food that still fits somewhere — a girl's
+ * favourite whose compartment is still free first, then any food of a still-missing category (nearest to
+ * `from`), love notes last (they're a bonus). −1 when nothing fits.
+ */
+export function suggestFood(
+  foods: readonly { kind: FoodKind; packed: boolean; x: number; z: number }[],
+  p: Packing,
+  favorites: Partial<Record<GirlId, FoodKind>>,
+  fromX: number,
+  fromZ: number,
+): number {
+  let best = -1;
+  let bestScore = Infinity;
+  for (let i = 0; i < foods.length; i++) {
+    const f = foods[i]!;
+    if (f.packed || !fitsSomewhere(p, f.kind)) continue;
+    const cat = FOOD_CATEGORY[f.kind];
+    const favFor = GIRLS.some((g) => favorites[g] === f.kind && cat !== 'extra' && p[g][cat] === null);
+    const tier = favFor ? 0 : cat === 'extra' ? 2 : 1;
+    const score = tier * 100 + Math.hypot(f.x - fromX, f.z - fromZ);
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  return best;
+}

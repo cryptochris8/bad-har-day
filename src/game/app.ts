@@ -140,7 +140,9 @@ export class App {
       return;
     }
     void this.ui.boot().then(() => {
-      if (this.screen === 'boot') this.screen = 'menus';
+      // boot() shows the title without data: hand the UI the SAVED settings/family/stats right away (otherwise
+      // FAMILY SETUP / SETTINGS would show defaults and the first edit would overwrite the player's save).
+      if (this.screen === 'boot') this.toMenus('title');
     });
   }
 
@@ -291,7 +293,8 @@ export class App {
   private showResults(): void {
     const m = this.morning;
     if (!m?.report) return;
-    const newBest = this.save.recordMorning(m.report);
+    // Dev jumps (?act= / ?activity=) skip whole acts: show the card, but keep them out of the player's stats.
+    const newBest = m.devJump ? false : this.save.recordMorning(m.report);
     const report = { ...m.report, newBestArrival: newBest };
     this.screen = 'results';
     this.input.setMode('menu');
@@ -313,7 +316,8 @@ export class App {
         this.newMorning({ daily: true });
         break;
       case 'playAgain':
-        this.newMorning();
+        // Same kind of morning again: a finished DAILY MORNING replays today's daily, otherwise a new random one.
+        this.newMorning({ daily: this.morning?.plan.daily ?? false });
         break;
       case 'resume':
         this.resume();

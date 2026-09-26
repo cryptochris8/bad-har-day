@@ -5,6 +5,7 @@
 // (ball, jogger, truck, puddle, sprinkler) away from cross streets / crosswalks.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { DriveEvent } from '../../plan/types';
+import { CROSSWALKS, EVENT_S0, EVENT_S1, INTERSECTIONS, LIGHTS } from '../../world/route/layout';
 
 export interface RouteFeatures {
   readonly crosswalks: readonly number[];
@@ -17,6 +18,8 @@ export interface RouteFeatures {
   readonly s1: number;
   /** The crossing guard may also use a school crossing up to here. */
   readonly guardMax: number;
+  /** …and never a crosswalk before this (not in the first seconds of the drive). Default: s0. */
+  readonly guardMin?: number;
 }
 
 export interface Placed {
@@ -27,6 +30,17 @@ export interface Placed {
   /** Index into `crosswalks` when snapped to one, else −1. */
   crosswalk: number;
 }
+
+/** The school-run street's features (src/world/route/layout.ts). */
+export const DRIVE_FEATURES: RouteFeatures = {
+  crosswalks: CROSSWALKS,
+  lights: LIGHTS,
+  intersections: INTERSECTIONS,
+  s0: EVENT_S0,
+  s1: EVENT_S1,
+  guardMax: 470,
+  guardMin: 120,
+};
 
 interface Cand {
   s: number;
@@ -40,7 +54,7 @@ function candidates(kind: DriveEvent, f: RouteFeatures): Cand[] {
   const out: Cand[] = [];
   if (kind === 'crossingGuard') {
     f.crosswalks.forEach((s, i) => {
-      if (s >= f.s0 && s <= f.guardMax) out.push({ s, light: -1, crosswalk: i });
+      if (s >= Math.max(f.s0, f.guardMin ?? f.s0) && s <= f.guardMax) out.push({ s, light: -1, crosswalk: i });
     });
     return out;
   }

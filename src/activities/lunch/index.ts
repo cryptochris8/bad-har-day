@@ -19,10 +19,10 @@ import { COUNTER_H } from '../../world';
 import { COUNTER_D } from '../../world/layout';
 import type { TaskItem } from '../../ui/types';
 import { approach, clamp01, yawToward, type PickSphere } from '../station/logic';
-import { PointerRay, Shot, StationChris, SurfaceProbe, Tweens, say, shortScreen } from '../station/runtime';
+import { PointerRay, Shot, StationChris, SurfaceProbe, Tweens, narrowPortrait, say, shortScreen, stationPrompt } from '../station/runtime';
 import { StationUi, css, h, type WorldTag } from '../station/ui';
 import { exposeStation } from '../station/debug';
-import { CATS, allDone, autoPack, boxDone, buildSpread, favoritesPacked, fullLine, lunchStars, newPacking, packedCount, place, spreadCells, type Packing } from './logic';
+import { CATS, allDone, autoPack, boxDone, buildSpread, favoritesPacked, fitsSomewhere, fullLine, lunchStars, newPacking, packedCount, place, spreadCells, suggestFood, type Packing } from './logic';
 
 type Phase = 'intro' | 'pack' | 'finale' | 'done';
 
@@ -97,6 +97,8 @@ class LunchActivity implements Activity {
   private readonly tmp2 = new THREE.Vector3();
   private readonly foodSpheres: (PickSphere | null)[] = [];
   private readonly boxSpheres: (PickSphere | null)[] = [];
+  private readonly magnetSpheres: (PickSphere | null)[] = [];
+  private readonly suggestBuf: { kind: FoodKind; packed: boolean; x: number; z: number }[] = [];
   private readonly beats: { left: number; fn: () => void }[] = [];
   private tasks: TaskItem[] = [];
   private notes = 0;
@@ -105,6 +107,8 @@ class LunchActivity implements Activity {
   private lastSource: string = '';
   private compact = false;
   private skipped = false;
+  private bounces = 0;
+  private rebase = false;
 
   start(ctx: ActivityContext): void {
     this.ctx = ctx;
@@ -219,10 +223,10 @@ class LunchActivity implements Activity {
     const sx = this.bounds.x1 + 0.95;
     const sz = a.z - 0.05;
     this.chris.goTo(sx, sz, yawToward(sx, sz, c.x + 0.2, c.z));
-    this.shot.look(c.x + 0.06, this.counterY + 0.1, c.z - 0.04, 0.04, 1.78, 1.36, 37).apply(ctx, 2.6);
+    this.shot.look(c.x + 0.06, this.counterY + 0.1, c.z - 0.04, 0.04, 1.78, 1.36, 37).portrait({ zoom: 1.02, lift: 0.14, left: 0 }).apply(ctx, 2.6);
 
     this.tasks = GIRLS.map((g) => ({ id: 'lunch:' + g, label: `${DISPLAY_NAME[g]}'s lunch`, icon: 'lunch', state: 'todo' }));
-    this.compact = shortScreen(ctx);
+    this.compact = shortScreen(ctx) || narrowPortrait(ctx);
     // Short phones: the name tags + ✓s carry the progress; keep the HUD column off the counter.
     ctx.hud.tasks = this.compact ? [] : this.tasks;
     ctx.hud.objective = this.compact ? '' : 'A main, a snack, a drink and a fruit for each girl.';
@@ -294,6 +298,7 @@ class LunchActivity implements Activity {
   private step(ctx: ActivityContext, dt: number, c: GameControls): void {
     this.phaseT += dt;
     this.tweens.update(dt);
+    this.shot.refresh(ctx);
     for (let i = this.beats.length - 1; i >= 0; i--) {
       const b = this.beats[i]!;
       b.left -= dt;
@@ -315,7 +320,7 @@ class LunchActivity implements Activity {
       if (this.phaseT > 0.55 + this.foods.length * 0.07 + 0.5 && this.beats.length === 0) {
         this.phase = 'pack';
         this.phaseT = 0;
-        if (ctx.pointer.source === 'virtual') this.warpTo(this.foods[0]?.sphere ?? null, 1);
+        if (ctx.pointer.source === 'virtual') this.snapToFood(this.bounds.x0, this.bounds.z1);
       }
     } else if (this.phase === 'pack') {
       this.packT += dt;
@@ -335,8 +340,8 @@ class LunchActivity implements Activity {
     const ray = this.ray!;
     // The virtual cursor (keys / pad) starts wherever the mouse last was — often a corner: bring it to the food.
     if (ptr.source === 'virtual' && this.lastSource !== 'virtual') {
-      const food = this.foods.find((f) => !f.packed && f.kind !== 'loveNote');
-      this.warpTo((this.held ? this.boxes[1]?.sphere : food?.sphere) ?? null, 1);
+      if (this.held) this.warpTo(this.boxes[1]?.sphere ?? null, 1);
+      else this.snapToFood(this.bounds.x0, this.bounds.z1);
     }
     this.lastSource = ptr.source;
     ray.update();
@@ -353,7 +358,14 @@ class LunchActivity implements Activity {
         if (hov) ctx.audio.play('uiMove', { volume: 0.25, pitch: 1.3 });
       }
       if (hov) hov.prop.setHighlight(0.85);
-      if (ptr.source === 'virtual') this.magnet(ctx, dt, c, this.foodSpheres);
+      if (ptr.source === 'virtual') {
+        // The cursor magnet only pulls toward foods that still fit in some box.
+        for (let i = 0; i < this.foods.length; i++) {
+          const f = this.foods[i]!;
+          this.magnetSpheres[i] = this.foodSpheres[i] && fitsSomewhere(this.packing, f.kind) ? f.sphere : null;
+        }
+        this.magnet(ctx, dt, c, this.magnetSpheres);
+      }
       if (ptr.pressed) {
         // Pick at the exact press point (a quick drag may already have moved the pointer this frame).
         ray.update(true);
@@ -400,6 +412,12 @@ class LunchActivity implements Activity {
     if (tgt) tgt.prop.setHighlight(0.7);
     if (ptr.source === 'virtual') this.magnet(ctx, dt, c, this.boxSpheres);
 
+    // The keys/pad cursor hops to a suggested box on pick-up: that hop is not a drag (re-baseline after it).
+    if (this.rebase) {
+      this.rebase = false;
+      this.pressX = ptr.x;
+      this.pressY = ptr.y;
+    }
     if (Math.hypot(ptr.x - this.pressX, ptr.y - this.pressY) > 14 && ptr.down) this.dragging = true;
     const dragDrop = ptr.released && (this.dragging || this.phaseT - this.pressT > 0.35);
     // A second press drops; so does letting go at the end of a drag.
@@ -425,7 +443,10 @@ class LunchActivity implements Activity {
       const cat = FOOD_CATEGORY[f.kind];
       const needs = (b: BoxView): boolean => (cat === 'extra' ? !this.packing[b.girl].note : this.packing[b.girl][cat] === null);
       const box = this.boxes.find((b) => needs(b) && this.favorites[b.girl] === f.kind) ?? this.boxes.find(needs) ?? this.boxes[1] ?? null;
-      if (box) this.warpTo(box.sphere, 1);
+      if (box) {
+        this.warpTo(box.sphere, 1);
+        this.rebase = true;
+      }
     }
   }
 
@@ -445,6 +466,7 @@ class LunchActivity implements Activity {
     }
     const r = place(this.packing, box.girl, f.kind);
     if (r === 'full' || r === 'noteFull') {
+      this.bounces++;
       this.sendHome(f);
       ctx.audio.play('boing', { volume: 0.35, pitch: 1.25 });
       ctx.ui.bubble(new THREE.Vector3(box.pos.x, box.pos.y + 0.5, box.pos.z + 0.05), fullLine(f.kind), { speaker: 'chris', seconds: 1.8 });
@@ -453,20 +475,16 @@ class LunchActivity implements Activity {
       return;
     }
     this.packInto(ctx, f, box, r === 'note');
-    if (ctx.pointer.source === 'virtual') {
-      // …and back to the nearest food still on the counter.
-      let best: Food | null = null;
-      let bd = Infinity;
-      for (const o of this.foods) {
-        if (o.packed) continue;
-        const d = Math.hypot(o.home.x - f.home.x, o.home.z - f.home.z);
-        if (d < bd) {
-          bd = d;
-          best = o;
-        }
-      }
-      if (best) this.warpTo(best.sphere, 1);
-    }
+    // Keys / pad: on to the next food that still fits somewhere (favourites / missing categories first).
+    if (ctx.pointer.source === 'virtual') this.snapToFood(f.home.x, f.home.z);
+  }
+
+  /** Warp the virtual cursor to the best next food (see suggestFood); stays put when nothing fits. */
+  private snapToFood(fromX: number, fromZ: number): void {
+    this.suggestBuf.length = 0;
+    for (const f of this.foods) this.suggestBuf.push({ kind: f.kind, packed: f.packed, x: f.home.x, z: f.home.z });
+    const i = suggestFood(this.suggestBuf, this.packing, this.favorites, fromX, fromZ);
+    if (i >= 0) this.warpTo(this.foods[i]!.sphere, 1);
   }
 
   /** Move a food into its compartment (or the note slot) with a quick hop; hearts for favourites. */
@@ -505,7 +523,11 @@ class LunchActivity implements Activity {
   private sendHome(f: Food): void {
     this.tweens.hop(f.prop.root, f.home, 0.3, 0.07, { scale: f.homeScale });
     f.prop.root.rotation.set(0, f.homeYaw, 0);
-    if (this.ctx?.pointer.source === 'virtual') this.warpTo(f.sphere, 1);
+    // Keys / pad: a food that fits nowhere must not keep the cursor (no "already has a drink" loop).
+    if (this.ctx?.pointer.source === 'virtual') {
+      if (fitsSomewhere(this.packing, f.kind)) this.warpTo(f.sphere, 1);
+      else this.snapToFood(f.home.x, f.home.z);
+    }
   }
 
   private wobble(b: BoxView): void {
@@ -549,10 +571,10 @@ class LunchActivity implements Activity {
     const key = dev === 'touch' || ctx.pointer.source !== 'virtual' ? (this.held ? 'p-drop' : 'p-pick') : this.held ? 'k-drop' : 'k-pick';
     if (key === this.lastPrompt) return;
     this.lastPrompt = key;
-    if (key === 'p-pick') ctx.ui.prompt({ text: 'Grab a food', slot: 'pointer' });
-    else if (key === 'p-drop') ctx.ui.prompt({ text: 'Drop it in a lunchbox', slot: 'pointer' });
-    else if (key === 'k-pick') ctx.ui.prompt({ text: 'Pick up', slot: 'primary' });
-    else ctx.ui.prompt({ text: 'Pack it', slot: 'primary' });
+    if (key === 'p-pick') stationPrompt(ctx, { text: 'Grab a food', slot: 'pointer' });
+    else if (key === 'p-drop') stationPrompt(ctx, { text: 'Drop it in a lunchbox', slot: 'pointer' });
+    else if (key === 'k-pick') stationPrompt(ctx, { text: 'Pick up', slot: 'primary' });
+    else stationPrompt(ctx, { text: 'Pack it', slot: 'primary' });
   }
 
   // ── wrap-up / finale ──────────────────────────────────────────────────────
@@ -727,6 +749,7 @@ class LunchActivity implements Activity {
       foods: this.foods.map((f) => f.kind),
       packT: +this.packT.toFixed(1),
       notes: this.notes,
+      bounces: this.bounces,
       stars: this.stars,
       cats: CATS,
     };

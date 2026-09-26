@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { placeEvents, type RouteFeatures } from '../../../src/activities/drive/placement';
+import { DRIVE_FEATURES, placeEvents, type RouteFeatures } from '../../../src/activities/drive/placement';
 import { generatePlan } from '../../../src/plan';
 import type { DriveEvent } from '../../../src/plan/types';
 import { CROSSWALKS, EVENT_S0, EVENT_S1, INTERSECTIONS, LIGHTS } from '../../../src/world/route/layout';
 
-const F: RouteFeatures = { crosswalks: CROSSWALKS, lights: LIGHTS, intersections: INTERSECTIONS, s0: EVENT_S0, s1: EVENT_S1, guardMax: 470 };
+const F: RouteFeatures = DRIVE_FEATURES;
 
 describe('placeEvents', () => {
   it('keeps the plan order, snaps features, spreads events out', () => {
@@ -23,6 +23,7 @@ describe('placeEvents', () => {
         expect(e.s).toBeLessThanOrEqual(470);
         if (e.kind === 'crossingGuard') {
           expect(e.crosswalk).toBeGreaterThanOrEqual(0);
+          expect(e.s).toBeGreaterThanOrEqual(F.guardMin ?? 0); // never in the drive's first seconds
           expect(CROSSWALKS[e.crosswalk]).toBe(e.s);
         }
         if (e.kind === 'greenLights') {
@@ -53,7 +54,7 @@ describe('placeEvents', () => {
   });
 
   it('squeezes when needed (relaxed spacing) instead of failing', () => {
-    const tight: RouteFeatures = { ...F, s0: 100, s1: 180, guardMax: 220 };
+    const tight: RouteFeatures = { ...F, s0: 100, s1: 180, guardMax: 220, guardMin: 0 };
     const p = placeEvents(['ball', 'crossingGuard', 'puddle', 'jogger'], tight);
     expect(p).toHaveLength(4);
     for (let i = 1; i < p.length; i++) expect(p[i]!.s).toBeGreaterThan(p[i - 1]!.s);

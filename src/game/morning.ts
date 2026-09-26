@@ -165,6 +165,7 @@ export class Morning {
   private scheme: ControlScheme | null = null;
   private prompt: ReturnType<InteractionsImpl['update']> = null;
   private gamePromptShown = false;
+  private lastBannerAt = -1e9;
   private disposed = false;
   private inGirlRoom: string | null = null;
   private readonly ui: UiManager;
@@ -172,6 +173,8 @@ export class Morning {
   private readonly persist = new THREE.Group();
   /** Dev/e2e: plays the whole morning by itself (starts chores, skips each activity after a moment). */
   autopilot = false;
+  /** Started with an act / activity jump (dev): the report is shown but never saved to the player's stats. */
+  devJump = false;
   private readonly choreStarters = new Map<ChoreId, () => void>();
 
   constructor(
@@ -382,6 +385,9 @@ export class Morning {
   private async actCard(n: ActNumber): Promise<void> {
     const d = this.d;
     const info = ACTS[n - 1]!;
+    // Let a just-shown completion banner ("EVERYBODY: AWAKE") finish before the act card covers the screen.
+    const sinceBanner = this.realSeconds - this.lastBannerAt;
+    if (sinceBanner < 1.8) await this.wait(1.8 - sinceBanner);
     this.act = n;
     // Every act starts at its scheduled time: finishing early fast-forwards the clock ("time flies"); the
     // arrival time at school comes from the school run itself (docs/GDD.md §3).
@@ -426,6 +432,7 @@ export class Morning {
 
   /** Dev/e2e: play one activity in its act's setting, then finish with a report. */
   private async runSingle(id: ActivityId): Promise<void> {
+    this.devJump = true;
     this.setupScene();
     const act: ActNumber = id === 'wake' ? 2 : id === 'hair' ? 3 : id === 'rush' ? 4 : id === 'drive' ? 5 : 1;
     if (act > 1) this.skipTo(act);
@@ -444,6 +451,7 @@ export class Morning {
   private skipTo(act: ActNumber): void {
     const d = this.d;
     const { family, world, npcs } = d;
+    this.devJump = true;
     this.state.coffee.made = true;
     this.state.coffee.stars = 2;
     this.state.coffee.mug = 'sunflower';
@@ -539,7 +547,7 @@ export class Morning {
     if (d.settings().hints && !d.seen('hint:roam')) {
       d.markSeen('hint:roam');
       d.ui.instruction('Walk to a glowing spot to start a chore', 'Everyone else is asleep — tiptoe!');
-      void this.wait(5).then(() => {
+      void this.wait(4).then(() => {
         if (!this.current) d.ui.instruction(null);
       });
     }
@@ -561,6 +569,36 @@ export class Morning {
           marker: true,
           enabled: () => remaining.has(id) && !this.current,
           onUse: () => this.startChore(id, remaining, requiredLeft, actEnd),
+        }),
+      );
+    }
+    // GDD §4.1 joke: trying to let the dog out the FRONT door gets you a look, and the dog trots to the back door.
+    if (remaining.has('dog')) {
+      const front = d.world.anchor('frontDoorIn');
+      offs.push(
+        d.interactions.add({
+          id: 'dog:wrongDoor',
+          at: front,
+          radius: 1.2,
+          label: 'Let the dog out',
+          enabled: () => remaining.has('dog') && !this.current,
+          onUse: () => {
+            const dog = d.family.dog;
+            d.npcs.stop(dog);
+            d.npcs.faceToward(dog, d.walker.position);
+            dog.play('tilt');
+            dog.emote('question', 1.8);
+            d.audio.play('dogWhine', { volume: 0.6 });
+            d.ui.banner('WRONG DOOR.', 'fun', { sub: `${dog.name} would like the back door, please.`, seconds: 2.2, icon: 'dog' });
+            this.state.flags.add('dog:wrongDoor');
+            void this.wait(1.4).then(async () => {
+              await d.npcs.walkTo(dog, d.world.anchor('backDoorIn'), { speed: 2.6, style: 'run' });
+              dog.play('bark');
+              dog.emote('exclaim', 1.5);
+              await this.wait(1.5);
+              if (!this.current) d.npcs.follow(dog, d.family.chris.root, { distance: 1.2 });
+            });
+          },
         }),
       );
     }
@@ -600,7 +638,10 @@ export class Morning {
         if (task) task.state = 'skipped';
         this.records.push({ id, label: ACTIVITIES[id].label, stars: 0, flags: ['skipped'] });
         const quip = SKIP_QUIPS[id];
-        if (quip) d.ui.toast(quip, ACTIVITIES[id].icon, 3);
+        if (quip) {
+          d.ui.toast(quip, ACTIVITIES[id].icon, 2.6);
+          this.lastBannerAt = this.realSeconds + 1; // let the joke be read before the next act card
+        }
       }
     }
     this.tasks = [];
@@ -704,6 +745,7 @@ export class Morning {
     if (info.banner) {
       d.ui.banner(info.banner, 'secured', { icon: info.icon });
       d.audio.play('taskDone');
+      this.lastBannerAt = this.realSeconds;
     }
     return result;
   }

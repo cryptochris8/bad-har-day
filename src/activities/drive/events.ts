@@ -99,6 +99,11 @@ export interface SimCtx {
 export type LightColor = 'red' | 'yellow' | 'green';
 
 const front = (c: CarState): number => c.s + CAR.halfLen;
+
+/** The crossing guard steps out when the van's nose is this far from her stop line… */
+export const GUARD_WAKE = 110;
+/** …and a stop anywhere this close before the line counts as stopping for her. */
+export const GUARD_ZONE = 100;
 const rear = (c: CarState): number => c.s - CAR.halfLen;
 
 /** The road surface is |x| < this (parking strip included): obstacles beyond it never block. */
@@ -176,6 +181,7 @@ export class CrossingGuard extends DriveEventLogic {
   /** Reaction shown ('thanks' | 'tsk'), once. */
   reaction: 'none' | 'thanks' | 'tsk' = 'none';
   private kidsStarted = false;
+  private kidsT = 0;
   readonly line: number;
 
   constructor(index: number, s: number, stopBack: number) {
@@ -183,7 +189,7 @@ export class CrossingGuard extends DriveEventLogic {
     this.line = s - stopBack;
     this.guard = makeObstacle('guard', s + 0.35, 7.3, 0.4, 0.4);
     this.guard.shown = true;
-    this.kids = [makeObstacle('kid', s - 0.55, 7.9, 0.35, 0.35), makeObstacle('kid', s + 1.15, 8.5, 0.35, 0.35)];
+    this.kids = [makeObstacle('kid', s - 0.55, 6.9, 0.35, 0.35), makeObstacle('kid', s + 1.15, 7.5, 0.35, 0.35)];
     for (const k of this.kids) k.shown = true;
     this.obstacles.push(this.guard, ...this.kids);
   }
@@ -207,7 +213,7 @@ export class CrossingGuard extends DriveEventLogic {
     const f = front(car);
     this.spot(sim);
     if (this.phase === 'wait') {
-      if (f >= this.line - 72) {
+      if (f >= this.line - GUARD_WAKE) {
         this.phase = 'out';
         this.active = true;
         sim.cue('guardOut', this.index);
@@ -222,24 +228,25 @@ export class CrossingGuard extends DriveEventLogic {
       if (g.x <= 0.5) this.phase = 'hold';
     }
     // kids cross behind her once she is in the road
-    if (!this.kidsStarted && (this.phase === 'hold' || g.x < 3.2)) {
+    if (!this.kidsStarted && (this.phase === 'hold' || g.x < 5.5)) {
       this.kidsStarted = true;
+      this.kidsT = this.t;
       sim.cue('kidsCross', this.index);
     }
     if (this.kidsStarted)
-      this.kids.forEach((k, i) => {
-        const startT = i * 0.85;
-        if (this.t < 1 + startT) return;
-        k.vx = -1.9 * hurry;
+      for (let i = 0; i < this.kids.length; i++) {
+        const k = this.kids[i]!;
+        if (this.t < this.kidsT + 0.3 + i * 0.6) continue;
+        k.vx = -2.4 * hurry;
         if (k.x > -9.5) k.x += k.vx * dt;
         else k.vx = 0;
-      });
+      }
     const kidsDone = this.kidsStarted && this.kids.every((k) => k.x <= -6.2);
-    // the car waiting near the line
-    const nearLine = f >= this.line - 32 && f <= this.line + 0.6;
-    if (car.v < 0.3 && nearLine) this.standing += dt;
+    // Stopping ANYWHERE before the line counts (an obedient driver may stop well short of it).
+    const beforeLine = f >= this.line - GUARD_ZONE && f <= this.line + 0.6;
+    if (car.v < 0.3 && beforeLine) this.standing += dt;
     else if (car.v > 1) this.standing = 0;
-    if ((this.phase === 'out' || this.phase === 'hold') && this.reaction === 'none' && car.v < 0.3 && nearLine) {
+    if ((this.phase === 'out' || this.phase === 'hold') && this.reaction === 'none' && car.v < 0.3 && beforeLine) {
       if (this.assisted && !this.engaged) {
         this.reaction = 'tsk';
         this.result = 'missed';
@@ -247,10 +254,12 @@ export class CrossingGuard extends DriveEventLogic {
       } else {
         this.reaction = 'thanks';
         this.result = 'good';
+        // the player reacted: rolling up to the line afterwards is never an "assist"
+        this.engaged = true;
         sim.cue('guardThanks', this.index);
       }
     }
-    if (this.phase === 'hold' && kidsDone && this.standing > 0.6) {
+    if (this.phase === 'hold' && kidsDone && (this.standing > 0.6 || sim.hurry)) {
       this.phase = 'back';
       sim.cue('guardBack', this.index);
     }
@@ -260,7 +269,7 @@ export class CrossingGuard extends DriveEventLogic {
       if (this.result === 'pending') this.result = 'good';
     }
     if (this.phase === 'back') {
-      g.x = Math.min(7.3, g.x + 2.3 * hurry * dt);
+      g.x = Math.min(7.3, g.x + 2.8 * hurry * dt);
       if (g.x >= 7.3) this.phase = 'clear';
     }
     for (const o of this.obstacles) o.onRoad = Math.abs(o.x) < ROAD_EDGE;
@@ -275,6 +284,12 @@ export class Geese extends DriveEventLogic {
   readonly isStop = true;
   readonly geese: Obstacle[] = [];
   speed = 1.1;
+  /** Flap-run speed after a honk. */
+  static readonly SCATTER = 5.2;
+  /** Per goose: 0 = not scattering yet, ±1 = the curb it runs to. */
+  private readonly scatter: number[] = [];
+  /** Seconds the van has been waiting for them before they set off. */
+  private waitT = 0;
   hurried = false;
   started = false;
   private honkBackT = 0;
@@ -286,6 +301,7 @@ export class Geese extends DriveEventLogic {
     for (let i = 0; i < n; i++) {
       const o = makeObstacle('goose', s + jitter(i) * 0.8, -5.7 - i * 0.85, 0.32, 0.3);
       this.geese.push(o);
+      this.scatter.push(0);
       this.obstacles.push(o);
     }
   }
@@ -299,8 +315,12 @@ export class Geese extends DriveEventLogic {
     const f = front(car);
     this.spot(sim);
     if (!this.started) {
-      const tta = (this.s - f) / Math.max(car.v, 4);
-      if (tta <= 6.5 || this.s - f <= 30) {
+      const ahead = this.s - f;
+      const tta = ahead / Math.max(car.v, 4);
+      // they set off when the van is ~6 s away — or when it has slowed / stopped for them, or honked politely
+      if (car.v < 2 && ahead < 70) this.waitT += dt;
+      const honked = sim.honkPressed && ahead < 60;
+      if (tta <= 6.5 || ahead <= 30 || this.waitT > 0.8 || honked) {
         this.started = true;
         this.active = true;
         for (const gz of this.geese) gz.shown = true;
@@ -320,13 +340,27 @@ export class Geese extends DriveEventLogic {
     }
     if (this.honkBackT > 0) this.honkBackT -= dt;
     if (sim.hurry && !this.hurried) this.hurried = true;
-    const sp = this.hurried ? 3.1 : this.speed;
     let allOff = true;
-    for (const gz of this.geese) {
-      gz.vx = gz.x < 9.5 ? sp : 0;
-      gz.x += gz.vx * dt;
+    for (let i = 0; i < this.geese.length; i++) {
+      const gz = this.geese[i]!;
+      if (this.hurried) {
+        // a polite honk: they flap-run to the NEAREST curb (the ones still on the left lawn stay there)
+        if (this.scatter[i] === 0) this.scatter[i] = gz.x >= 0 ? 1 : -1;
+        const dir = this.scatter[i]!;
+        const target = dir > 0 ? 8.4 : -8.2;
+        gz.vx = Math.abs(target - gz.x) < 0.05 ? 0 : dir * Geese.SCATTER;
+        gz.x += gz.vx * dt;
+        if (dir > 0 ? gz.x > target : gz.x < target) {
+          gz.x = target;
+          gz.vx = 0;
+        }
+      } else {
+        gz.vx = gz.x < 9.5 ? this.speed : 0;
+        gz.x += gz.vx * dt;
+      }
       gz.onRoad = Math.abs(gz.x) < ROAD_EDGE;
-      if (gz.x < 7.2) allOff = false;
+      // done when every goose is across (or, after a honk, off the road on either side)
+      if (this.hurried ? Math.abs(gz.x) < ROAD_EDGE + 0.3 : gz.x < ROAD_EDGE + 0.3) allOff = false;
     }
     // A cheeky close pass (the car zooms past right in front of them): they flap, no penalty.
     if (!this.closeCued && car.v > 6 && Math.abs(car.s - this.s) < 3 && this.geese.some((gz) => gz.onRoad && Math.abs(gz.x - car.x) < 2.2)) {
@@ -608,6 +642,7 @@ export class Ball extends DriveEventLogic {
   readonly ball: Obstacle;
   launched = false;
   bonked = false;
+  private waitT = 0;
   /** Which lawn the kids play on (+1 right, −1 left). */
   constructor(
     index: number,
@@ -635,17 +670,20 @@ export class Ball extends DriveEventLogic {
     const f = front(car);
     this.spot(sim);
     if (!this.launched) {
-      // bouncing on the lawn beside the kid until the car gets close
+      // bouncing on the lawn beside the kid until the car gets close (or has slowed right down for them)
       b.y = 0.3 + Math.abs(Math.sin(this.t * 3.4)) * 0.5;
       this.t += dt;
       const trigger = Math.max(12, car.v * 1.75 + 3);
-      if (this.s - f <= trigger) {
+      if (car.v < 3 && this.s - f < 60) this.waitT += dt;
+      const waited = this.waitT > 0.6;
+      if (this.s - f <= trigger || waited) {
         this.launched = true;
         this.active = true;
         this.t = 0;
         const x0 = this.side * 6.8;
         const tArr = Math.max(0.6, (this.s - f) / Math.max(car.v, 2));
-        const sp = Math.max(2.4, Math.min(7, Math.abs(x0 - car.x) / tArr));
+        // (a van that already stopped for the kids sees the ball bounce straight across)
+        const sp = Math.max(waited ? 4.5 : 2.4, Math.min(7, Math.abs(x0 - car.x) / tArr));
         b.x = x0;
         b.vx = -this.side * sp;
         b.vy = 2.6;

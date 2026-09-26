@@ -142,8 +142,8 @@ export type Expression =
   | 'pout' // playful pout
   | 'smug'
   | 'love' // big shiny eyes
-  | 'eek' // playful "eep!" (brush snag) — squint one eye, teeth-grin, NOT pain
-  | 'dramatic' // theatrical despair for 'noooo' (mouth wide open, brows up) — comedic
+  | 'eek' // playful "eep!" / "oops!" (brush snag) — eyes wide, brows up, small O mouth, a little head bob; NEVER pain
+  | 'dramatic' // theatrical "nooo!" — eyes wide and rolled up, brows high, big O mouth, head back; comedic, never crying
   | 'proud' // chin up, satisfied smile
   | 'yawn'; // mouth wide open, eyes squeezed
 

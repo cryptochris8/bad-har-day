@@ -56,8 +56,8 @@ const CSS = `
   .bhd-st-zone--up{margin-bottom:10px}
 }
 @media (max-width:640px) and (orientation:portrait){
-  .bhd-st-side{top:calc(var(--bhd-safe-t,0px) + 150px)}
-  .bhd-st-zones{bottom:calc(46vh + var(--bhd-safe-b,0px))}
+  .bhd-st-side{top:calc(var(--bhd-safe-t,0px) + clamp(118px,15vh,130px) + 76px)}
+  .bhd-st-zones{bottom:calc(14px + var(--bhd-safe-b,0px))}
   .bhd-st-zone{min-width:92px}
 }
 .bhd-ui[data-device='touch'] .bhd-st-card .bhd-st-hold{display:none}
@@ -98,6 +98,8 @@ export class WorldTag {
   private readonly out = { x: 0, y: 0, visible: false };
   private lx = -1e9;
   private ly = -1e9;
+  private halfW = -1;
+  private measureIn = 0;
 
   constructor(
     parent: HTMLElement,
@@ -117,7 +119,14 @@ export class WorldTag {
       return;
     }
     if (this.el.hidden) this.el.hidden = false;
-    const x = Math.round(this.out.x);
+    // Keep the whole tag on screen (a wide "Hold to rinse" pill next to a dish at the frame edge).
+    if (--this.measureIn <= 0 || this.halfW < 0) {
+      this.measureIn = 20;
+      this.halfW = (this.el.offsetWidth || 0) / 2;
+    }
+    const W = this.el.parentElement?.clientWidth ?? 0;
+    let x = Math.round(this.out.x);
+    if (W > 0 && this.halfW > 0) x = Math.round(Math.min(W - this.halfW - 6, Math.max(this.halfW + 6, x)));
     const y = Math.round(this.out.y);
     if (x === this.lx && y === this.ly) return;
     this.lx = x;
@@ -127,6 +136,7 @@ export class WorldTag {
 
   set hidden(v: boolean) {
     this.el.style.display = v ? 'none' : '';
+    this.halfW = -1;
   }
 }
 

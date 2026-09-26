@@ -50,15 +50,24 @@ describe('expression table', () => {
     expect(faceFor('love', 'girl').pupil).toBeGreaterThan(1.2);
     expect(faceFor('pout', 'girl').mouth).toBe('pout');
     expect(faceFor('worried', 'girl').browTilt).toBeLessThan(0);
-    // 'eek' = playful squint of ONE eye + teeth grin (not pain).
+    // 'eek' = playful "eep! oops!" (brush snag), never a pain wince: eyes open wide, brows up,
+    // small round mouth, no squeezed eyes and no gritted teeth.
     const eek = faceFor('eek', 'girl');
-    expect(eek.mouth).toBe('eek');
-    expect(eek.eyeL === 'squeeze' || eek.eyeR === 'squeeze').toBe(true);
-    expect(eek.eyeL).not.toBe(eek.eyeR);
-    // 'dramatic' = theatrical: mouth wide open, brows up.
+    expect(eek.eyeL).toBe('open');
+    expect(eek.eyeR).toBe('open');
+    expect(eek.lid).toBeLessThan(0);
+    expect(eek.lidR).toBeLessThanOrEqual(0);
+    expect(eek.browY).toBeGreaterThan(0.2);
+    expect(eek.mouth).toBe('o');
+    // 'dramatic' = theatrical, never crying: eyes open looking up, brows high, big round O.
     const dr = faceFor('dramatic', 'girl');
-    expect(dr.mouth).toBe('yawn');
-    expect(dr.browY).toBeGreaterThan(0.2);
+    expect(dr.eyeL).toBe('open');
+    expect(dr.eyeR).toBe('open');
+    expect(dr.lid).toBeLessThan(0);
+    expect(dr.pupilY).toBeGreaterThan(0.5);
+    expect(dr.browY).toBeGreaterThan(0.3);
+    expect(dr.mouth).toBe('o');
+    expect(dr.mouthScale).toBeGreaterThan(1.5);
     // 'proud' = chin up (negative pitch) + smile.
     expect(faceFor('proud', 'girl').headX).toBeLessThan(0);
     expect(['smile', 'bigSmile']).toContain(faceFor('proud', 'girl').mouth);
@@ -75,6 +84,18 @@ describe('expression table', () => {
 
   it("gives Chris sleepy-kind eyes at rest", () => {
     expect(faceFor('neutral', 'chris').lid).toBeGreaterThan(faceFor('neutral', 'girl').lid);
+  });
+
+  it('eek and dramatic never squeeze the eyes shut (no pain, no crying)', () => {
+    for (const fl of FLAVORS) {
+      for (const e of ['eek', 'dramatic'] as const) {
+        const f = faceFor(e, fl);
+        expect(f.eyeL, `${fl}.${e}`).not.toBe('squeeze');
+        expect(f.eyeR, `${fl}.${e}`).not.toBe('squeeze');
+        expect(f.eyeL, `${fl}.${e}`).not.toBe('closed');
+      }
+    }
+    expect(MOUTHS as readonly string[]).not.toContain('eek');
   });
 
   it('has no frown / sad mouth anywhere (tone rules)', () => {

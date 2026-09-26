@@ -71,7 +71,7 @@ fail). The **arrival time** comes from the school run (Act V starts at 7:50): a 
 
 | Act | Clock | Title card | Content | Real time |
 |---|---|---|---|---|
-| I | 5:15 → 6:00 | **CHRIS'S EARLY SHIFT** · *EVERYBODY ELSE IS STILL ASLEEP.* | Explore the dark house as Chris; do the morning's randomized chore list (3–5 of: **Dog out** (always), **Ashley's coffee** (always), **Lunchboxes**, **Trash**, **Dishes**). Stay quiet: the girls sleep. | 3–5 min |
+| I | 5:15 → 6:00 | **CHRIS'S EARLY SHIFT** · *EVERYBODY ELSE IS STILL ASLEEP.* | Explore the dark house as Chris; do the morning's randomized chore list (4–5 of: **Dog out** (always), **Ashley's coffee** (always), and 2–3 of **Lunchboxes**, **Trash**, **Dishes**). Stay quiet: the girls sleep. | 3–5 min |
 | II | 6:00 → 6:30 | **WAKE UP, GIRLS!** | Lights on, music up. Wake each girl (her seeded wake-up style), Ashley wakes and gets her coffee (payoff: ♥). Girls gather for breakfast. | 1.5–3 min |
 | III | 6:30 → 7:15 | **THE BLACK BRUSH** · *EVERYBODY WANTS IT.* | The Black Brush Battle + brushing three heads of hair + **MOM'S HAIR CHECK**. The signature act. | 3–5 min |
 | IV | 7:15 → 7:50 | **OUT THE DOOR** · *SHOES. BACKPACKS. LUNCHES. GO.* | The rush: find the missing items (a shoe, a backpack, a library book, a water bottle, a hair tie…) hidden around the house, deliver them to the right girl at the front door. **7:45: Ashley leaves for work** (cutscene: grabs her coffee, hugs, "Love you! Have a great day!"). | 2–3 min |

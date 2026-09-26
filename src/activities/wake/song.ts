@@ -48,6 +48,16 @@ const CSS = `
 .bhd-wk-dot.is-miss{background:#dccdd3}
 .bhd-wk-msg{font-size:var(--bhd-fs-1);color:var(--bhd-ink-soft);min-height:1.2em;text-align:center}
 .bhd-ui[data-device='touch'] .bhd-wk-song .bhd-glyph{display:none}
+/* short landscape phones: a compact panel (the objective line is hidden while singing) */
+@media (max-height: 440px){
+  .bhd-wk-song{gap:3px;padding:5px 10px 6px}
+  .bhd-wk-song__title{font-size:var(--bhd-fs-2)}
+  .bhd-wk-lane,.bhd-ui[data-device='touch'] .bhd-wk-lane{height:40px}
+  .bhd-wk-hit,.bhd-ui[data-device='touch'] .bhd-wk-hit{width:32px;height:32px;margin:-16px 0 0 -16px}
+  .bhd-wk-note,.bhd-ui[data-device='touch'] .bhd-wk-note{width:28px;height:28px;margin:-14px 0 0 -14px;font-size:16px}
+  .bhd-wk-dot{width:12px;height:12px}
+  .bhd-wk-msg{display:none}
+}
 `;
 
 const JUDGE: Record<Grade, string> = { perfect: 'PERFECT!', good: 'GOOD!', miss: 'oops' };

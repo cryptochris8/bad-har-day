@@ -468,7 +468,7 @@ export const ANCHORS: Readonly<Record<AnchorId, Anchor>> = {
   // yard / outside
   yardCenter: A(14.6, -6.2, 0, 'yard'),
   yardBush: A(17.2, -10.45, PI, 'yard'),
-  yardFar: A(19.7, -12.35, (3 * PI) / 4, 'yard'),
+  yardFar: A(19.3, -7.6, PI / 2, 'yard'), // open east lawn, staring over the fence (visible from the camera)
   outdoorBin: A(10.45, 1.05, -PI / 2, 'side'),
   dogBed: A(4.25, 0.12, 0, 'living'),
   dogBowl: A(8.05, -3.2, PI / 2, 'kitchen'),
@@ -567,7 +567,7 @@ export const LAMPS: readonly LampDef[] = [
   // kitchen: under-cabinet glow + stove hood light
   L(4.39, 1.42, -6.15, 'night', 2.2, 5, 0.3, 'z+'),
   L(2.95, 1.62, -3.7, 'house', 1.6, 0, 0.4),
-  L(7.85, 1.42, -6.15, 'house', 1.6, 4, 0.28, 'z+'),
+  L(7.85, 1.42, -6.15, 'night', 1.6, 4, 0.28, 'z+'), // on at 5:15: the sink + dishwasher corner (dishes chore)
   // hall night light
   L(-2.4, 0.3, -0.72, 'night', 1.2, 2.5, 0.3),
   // entry sconce

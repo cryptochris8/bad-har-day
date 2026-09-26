@@ -12,7 +12,7 @@ import type { Character, MemberId } from '../../family/types';
 import type { ButtonSpec, ControlIcon, ControlScheme, GameControls } from '../../input/types';
 import type { Vec3Like } from '../../render/types';
 import type { BubbleHandle, BubbleOpts, PromptSpec } from '../../ui/types';
-import type { Anchor, AnchorId, World } from '../../world/types';
+import type { Anchor, AnchorId, RoomId, World } from '../../world/types';
 import { BED_MATTRESS_H } from '../../world';
 import { bedRoot, freeSpotNear, nearestInReach, nearestOnScreen } from './geo';
 
@@ -249,7 +249,14 @@ export class Hotspots {
   private readonly proj = { x: 0, y: 0, visible: false };
   private readonly pv = { x: 0, y: 0, z: 0 };
 
-  constructor(private readonly ctx: ActivityContext) {
+  /**
+   * `walkable`: rooms a tap-to-walk may target. Scripted walks ignore CLOSED doors, so keep this to the rooms Chris
+   * can walk back from (default: inside the house).
+   */
+  constructor(
+    private readonly ctx: ActivityContext,
+    private readonly walkable: (room: RoomId | null) => boolean = insideHouse,
+  ) {
     if (TEST_HOOKS) testWindow().__BHD_SPOTS__ = this.testApi();
   }
 
@@ -477,7 +484,7 @@ export class Hotspots {
     }
     const k = nearestOnScreen(px, py, this.screen, 70);
     const w = ctx.walker;
-    if (k >= 0) {
+    if (k >= 0 && this.walkable(ctx.world.roomAt(this.items[k]!.x, this.items[k]!.z))) {
       const e = this.items[k]!;
       const d = Math.hypot(e.x - w.position.x, e.z - w.position.z);
       if (d <= (e.def.radius ?? 1.2) * 0.85) {
@@ -493,7 +500,7 @@ export class Hotspots {
     this.ndc.set(ndcX, ndcY);
     this.ray.setFromCamera(this.ndc, ctx.camera.camera);
     if (!this.ray.ray.intersectPlane(this.plane, this.hit)) return;
-    if (ctx.world.roomAt(this.hit.x, this.hit.z) === null) return;
+    if (!this.walkable(ctx.world.roomAt(this.hit.x, this.hit.z))) return;
     this.tapTarget = null;
     this.walkTo(this.hit.x, this.hit.z);
   }
@@ -516,6 +523,13 @@ export class Hotspots {
     this.tapGen++;
     this.shownText = '';
   }
+}
+
+/** The rooms inside the house (tap-to-walk targets while the outside doors are shut). */
+export const HOUSE_ROOMS: ReadonlySet<RoomId> = new Set<RoomId>(['kitchen', 'living', 'hall', 'entry', 'master', 'twins', 'heidi', 'bath']);
+
+export function insideHouse(room: RoomId | null): boolean {
+  return room !== null && HOUSE_ROOMS.has(room);
 }
 
 // ── props in hands ──────────────────────────────────────────────────────────
@@ -582,18 +596,19 @@ export function dist2(a: Vec3Like, b: Vec3Like): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
-// ── the "hold to hurry" hint (keyboard / pad: touch players get a HURRY button) ─
+// ── small device-glyph hints in a corner (keyboard / pad; touch players have on-screen buttons) ────────
 
-export class HurryHint {
+export class GlyphHint {
   private readonly el: HTMLElement;
   private shown = false;
 
-  constructor(layer: HTMLElement) {
+  constructor(layer: HTMLElement, slot: 'primary' | 'secondary' | 'alt', text: string, side: 'left' | 'right') {
     const el = document.createElement('span');
     el.className = 'bhd-glyph';
-    el.setAttribute('data-slot', 'alt');
-    el.textContent = 'Hold to hurry';
-    el.style.cssText = 'position:absolute;left:calc(14px + var(--bhd-safe-l));bottom:calc(14px + var(--bhd-safe-b));opacity:.92;display:none;pointer-events:none;';
+    el.setAttribute('data-slot', slot);
+    el.textContent = text;
+    const edge = side === 'left' ? 'left:calc(14px + var(--bhd-safe-l))' : 'right:calc(14px + var(--bhd-safe-r))';
+    el.style.cssText = `position:absolute;${edge};bottom:calc(14px + var(--bhd-safe-b));opacity:.92;display:none;pointer-events:none;`;
     layer.appendChild(el);
     this.el = el;
   }
@@ -608,6 +623,13 @@ export class HurryHint {
 
   dispose(): void {
     this.el.remove();
+  }
+}
+
+/** "[Shift] Hold to hurry" (bottom-left). */
+export class HurryHint extends GlyphHint {
+  constructor(layer: HTMLElement) {
+    super(layer, 'alt', 'Hold to hurry', 'left');
   }
 }
 

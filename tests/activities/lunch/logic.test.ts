@@ -7,12 +7,14 @@ import {
   boxDone,
   buildSpread,
   favoritesPacked,
+  fitsSomewhere,
   fullLine,
   lunchStars,
   newPacking,
   packedCount,
   place,
   spreadCells,
+  suggestFood,
 } from '../../../src/activities/lunch/logic';
 import { Rng } from '../../../src/core/rng';
 import { GIRLS, type GirlId } from '../../../src/family/types';
@@ -158,5 +160,40 @@ describe('lunch stars', () => {
     expect(lunchStars(1, 30)).toBe(2);
     expect(lunchStars(1, 200)).toBe(1);
     expect(lunchStars(0, 200)).toBe(1);
+  });
+});
+
+describe('cursor suggestions (keys / gamepad)', () => {
+  const fav = { addy: 'grapes', ellie: 'pretzels', heidi: 'juiceBox' } as const;
+  const at = (kind: FoodKind, x: number, packed = false) => ({ kind, packed, x, z: 0 });
+  it('knows when a food still fits somewhere', () => {
+    const p = newPacking();
+    expect(fitsSomewhere(p, 'milkCarton')).toBe(true);
+    for (const g of GIRLS) place(p, g, 'waterBottle');
+    expect(fitsSomewhere(p, 'milkCarton')).toBe(false);
+    expect(fitsSomewhere(p, 'loveNote')).toBe(true);
+    for (const g of GIRLS) place(p, g, 'loveNote');
+    expect(fitsSomewhere(p, 'loveNote')).toBe(false);
+  });
+  it('never suggests a food that fits in no box (the "already has a drink" loop)', () => {
+    const p = newPacking();
+    for (const g of GIRLS) place(p, g, 'waterBottle');
+    const foods = [at('milkCarton', 0.01), at('sandwich', 0.5)];
+    expect(suggestFood(foods, p, fav, 0, 0)).toBe(1);
+  });
+  it('prefers a still-needed favourite, then the nearest missing category, notes last', () => {
+    const p = newPacking();
+    const foods = [at('loveNote', 0), at('crackers', 0.1), at('grapes', 0.9), at('wrap', 0.2)];
+    expect(suggestFood(foods, p, fav, 0, 0)).toBe(2); // Addy's grapes
+    place(p, 'addy', 'grapes');
+    foods[2]!.packed = true;
+    expect(suggestFood(foods, p, fav, 0, 0)).toBe(1); // nearest food, not the note
+    expect(suggestFood([at('loveNote', 0)], p, fav, 0, 0)).toBe(0);
+  });
+  it('returns −1 when everything is packed or nothing fits', () => {
+    const p = newPacking();
+    expect(suggestFood([at('banana', 0, true)], p, fav, 0, 0)).toBe(-1);
+    for (const g of GIRLS) place(p, g, 'banana');
+    expect(suggestFood([at('grapes', 0)], p, fav, 0, 0)).toBe(-1);
   });
 });

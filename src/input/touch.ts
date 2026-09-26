@@ -55,6 +55,14 @@ interface Btn {
   hold: boolean;
 }
 
+/** Pointer id used for taps forwarded through the joystick zone (never a real pointer). */
+export const TAP_POINTER_ID = 9_999;
+
+/** A zone touch counts as a tap (forwarded to what is underneath) when it is short and nearly still. Pure. */
+export function isTap(durationMs: number, movedPx: number): boolean {
+  return durationMs >= 0 && durationMs < 280 && movedPx < 14;
+}
+
 const RING_SVG =
   '<svg class="bhd-touch__ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false">' +
   '<circle class="bhd-touch__ring-track" cx="50" cy="50" r="46"/>' +
@@ -113,6 +121,11 @@ export class TouchOverlay {
   private move: MoveAxes = 'none';
   private moveLabel = '';
   private stickId: number | null = null;
+  /** Tap detection on the joystick zone: a quick, still touch is forwarded to whatever is underneath. */
+  private tapT = 0;
+  private tapX = 0;
+  private tapY = 0;
+  private tapMoved = 0;
   private readonly origin = { x: 0, y: 0 };
   private zoneLeft = 0;
   private zoneTop = 0;
@@ -363,6 +376,10 @@ export class TouchOverlay {
     e.preventDefault();
     this.stickId = e.pointerId;
     capture(this.zone, e.pointerId);
+    this.tapT = e.timeStamp;
+    this.tapX = e.clientX;
+    this.tapY = e.clientY;
+    this.tapMoved = 0;
 
     const rect = this.zone.getBoundingClientRect();
     this.zoneLeft = rect.left;
@@ -379,13 +396,42 @@ export class TouchOverlay {
   private readonly onZoneMove = (e: PointerEvent): void => {
     if (e.pointerId !== this.stickId) return;
     e.preventDefault();
+    this.tapMoved = Math.max(this.tapMoved, Math.hypot(e.clientX - this.tapX, e.clientY - this.tapY));
     this.applyStick(e.clientX - this.zoneLeft, e.clientY - this.zoneTop);
   };
 
   private readonly onZoneUp = (e: PointerEvent): void => {
     if (e.pointerId !== this.stickId) return;
+    const tap = e.type === 'pointerup' && isTap(e.timeStamp - this.tapT, this.tapMoved);
     this.releaseStick();
+    if (tap) this.forwardTap(e.clientX, e.clientY, e.pointerType);
   };
+
+  /**
+   * The joystick zone covers the lower-left of the screen; a quick tap there (not a drag) is meant for what is
+   * underneath (a hotspot on the canvas, an activity chip): re-dispatch it as pointerdown/up + click on that element.
+   */
+  private forwardTap(x: number, y: number, pointerType: string): void {
+    const zone = this.zone;
+    const prev = zone.style.pointerEvents;
+    zone.style.pointerEvents = 'none';
+    let target: Element | null = null;
+    try {
+      target = typeof this.doc.elementFromPoint === 'function' ? this.doc.elementFromPoint(x, y) : null;
+    } finally {
+      zone.style.pointerEvents = prev;
+    }
+    if (!target || this.el.contains(target)) return;
+    const win = this.doc.defaultView;
+    const base = { clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0 };
+    const PE = win && typeof win.PointerEvent === 'function' ? win.PointerEvent : null;
+    const ME = win ? win.MouseEvent : MouseEvent;
+    const ptr = (type: string, buttons: number): Event =>
+      PE ? new PE(type, { ...base, buttons, pointerId: TAP_POINTER_ID, pointerType, isPrimary: true }) : new ME(type, { ...base, buttons });
+    target.dispatchEvent(ptr('pointerdown', 1));
+    target.dispatchEvent(ptr('pointerup', 0));
+    target.dispatchEvent(new ME('click', base));
+  }
 
   private applyStick(px: number, py: number): void {
     const xOnly = this.move === 'x';

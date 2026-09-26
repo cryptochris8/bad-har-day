@@ -203,6 +203,8 @@ export function buildFixtures(): FixtureSet {
   };
   const BF = new Frame(S, btX, 0, btZ, Math.PI / 2);
   bin(BF, PAL.binTrash);
+  // Dark opening inset into the top (inside the closed lid's volume): reads as a real mouth when the lid lifts.
+  BF.span(-0.26, 0.26, 1.004, 1.016, -0.28, 0.28, 0x1c1f26, { ink: false });
   const br = OUT.binRecycle.r;
   const RFr = new Frame(S, (br.x0 + br.x1) / 2, 0, (br.z0 + br.z1) / 2, Math.PI / 2);
   bin(RFr, PAL.binRecycle);

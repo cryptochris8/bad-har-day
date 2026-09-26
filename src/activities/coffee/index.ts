@@ -18,7 +18,7 @@ import { cachedGeo, plain } from '../../render/models/common';
 import { modelMaterial } from '../../render/models/materials';
 import { COUNTER_H, TABLE_H } from '../../world';
 import { CircleAccumulator, FlickDetector, approach, yawToward } from '../station/logic';
-import { PointerRay, Shot, StationChris, SurfaceProbe, Tweens, holdIn, say } from '../station/runtime';
+import { PointerRay, Shot, StationChris, SurfaceProbe, Tweens, holdIn, say, stationPrompt } from '../station/runtime';
 import { StationUi, css, glyph, h, setVar, type WorldTag } from '../station/ui';
 import { exposeStation } from '../station/debug';
 import {
@@ -126,6 +126,7 @@ class CoffeeActivity implements Activity {
   private readonly sphere = [] as ({ x: number; y: number; z: number; r: number } | null)[];
   private readonly beats: { left: number; fn: () => void }[] = [];
   private readonly voiceAt = new THREE.Vector3();
+  private activeShot: Shot | null = null;
 
   start(ctx: ActivityContext): void {
     this.ctx = ctx;
@@ -185,7 +186,7 @@ class CoffeeActivity implements Activity {
     }
     if (this.order === 'creamSugar') {
       const j = makeProp('sugarJar');
-      const x = this.spot.x - 0.2;
+      const x = this.spot.x - 0.17;
       const z = this.spot.z + 0.1;
       j.root.position.set(x, counterY(x, z), z);
       j.root.visible = false;
@@ -215,8 +216,11 @@ class CoffeeActivity implements Activity {
     this.voiceAt.set(Math.max(machine.x, shelfC.x) + 0.2, shelfC.y + 0.3, machine.z + 0.25);
     const tx = (machine.x + shelfC.x) / 2 - 0.12;
     const ty = shelfC.y - 0.2;
-    this.shotShelf.look(tx, ty, machine.z + 0.04, 0.12, 0.95, 3.4, 27).apply(ctx, 2.6);
-    this.shotMug.look(this.spot.x + 0.04, this.spot.y + 0.12, this.spot.z, 0.14, 0.42, 1.2, 34);
+    // Portrait phones: move in (the rig widens the FOV) and keep the subject clear of the side card / thumbs.
+    this.shotShelf.look(tx, ty, machine.z + 0.04, 0.12, 0.95, 3.4, 27).portrait({ zoom: 0.55, lift: 0, left: 0.2 });
+    this.useShot(ctx, this.shotShelf, 2.6);
+    this.shotMug.look(this.spot.x + 0.04, this.spot.y + 0.12, this.spot.z, 0.14, 0.42, 1.2, 34).portrait({ zoom: 0.85, lift: 0.32, left: 0.14 });
+    this.shotTable.portrait({ zoom: 0.8, lift: 0.2, left: 0 });
 
     this.nameTag = this.ui.tag(this.tagAt, '', true);
     this.nameTag.el.appendChild(h('span', 'bhd-st-label', ''));
@@ -311,6 +315,7 @@ class CoffeeActivity implements Activity {
     this.tweens.update(dt);
     this.tickBeats(dt);
     this.her?.update(dt);
+    this.activeShot?.refresh(ctx);
     const ptr = ctx.pointer;
     const taps = this.ui!.takeTaps();
     const tapped = taps.length > 0;
@@ -321,7 +326,7 @@ class CoffeeActivity implements Activity {
         // Let the camera glide in before the mugs take input.
         if (this.phaseT > 1.2 && (this.chris!.arrived || this.phaseT > 2.4)) {
           this.setPhase('pick');
-          ctx.ui.prompt({ text: 'Pick this mug', slot: 'primary' });
+          stationPrompt(ctx, { text: 'Pick this mug', slot: 'primary' });
         }
         break;
       }
@@ -352,7 +357,7 @@ class CoffeeActivity implements Activity {
         this.showSelection(ctx, dt);
         if (this.phaseT > 1.25) {
           this.setPhase('pick');
-          ctx.ui.prompt({ text: 'Pick this mug', slot: 'primary' });
+          stationPrompt(ctx, { text: 'Pick this mug', slot: 'primary' });
         }
         break;
       }
@@ -401,7 +406,7 @@ class CoffeeActivity implements Activity {
         if (this.phaseT > 1.0) {
           this.setPhase('wipe');
           ctx.ui.instruction('Oops! Wipe it up!', `Tap ${WIPES} times`);
-          ctx.ui.prompt({ text: 'Wipe', slot: 'primary' });
+          stationPrompt(ctx, { text: 'Wipe', slot: 'primary' });
           this.showCard(ctx, 'wipe');
         }
         break;
@@ -519,7 +524,7 @@ class CoffeeActivity implements Activity {
         this.carryRefresh -= dt;
         if (this.carryRefresh <= 0) {
           this.carryRefresh = 0.3;
-          this.shotCarry.apply(ctx, 3.4);
+          this.useShot(ctx, this.shotCarry, 3.4);
         } else ctx.camera.rig.setGoal(this.shotCarry.goal, 3.4);
         if (this.chris!.arrived || this.phaseT > 9) this.setDown(ctx);
         break;
@@ -609,14 +614,14 @@ class CoffeeActivity implements Activity {
   // ── brew ──────────────────────────────────────────────────────────────────
 
   private enterBrew(ctx: ActivityContext): void {
-    this.shotMug.apply(ctx, 3);
+    this.useShot(ctx, this.shotMug, 3);
     this.voiceAt.set(this.spot.x + 0.24, this.spot.y + 0.36, this.spot.z);
     this.level = 0;
     this.her?.setFill(0);
     this.her?.setLiquid(ORDER_COLOR.black);
     this.showCard(ctx, 'brew');
     ctx.ui.instruction('Brew it!', 'Hold — let go in the gold zone');
-    ctx.ui.prompt({ text: 'Hold to brew', slot: 'primary', hold: true });
+    stationPrompt(ctx, { text: 'Hold to brew', slot: 'primary', hold: true });
     this.setPhase('brew');
   }
 
@@ -670,7 +675,7 @@ class CoffeeActivity implements Activity {
     }
     this.showCard(ctx, 'cream');
     ctx.ui.instruction('Add the creamer', `${ORDER_NAME[this.order]} — match the swatch!`);
-    ctx.ui.prompt({ text: 'Hold to pour', slot: 'primary', hold: true });
+    stationPrompt(ctx, { text: 'Hold to pour', slot: 'primary', hold: true });
     const cr = this.creamer;
     if (cr) {
       cr.root.visible = true;
@@ -709,7 +714,7 @@ class CoffeeActivity implements Activity {
       this.setPhase('sugar');
       this.clearCard();
       ctx.ui.instruction('One spoon of sugar', 'Tap the sugar jar');
-      ctx.ui.prompt({ text: 'Add sugar', slot: 'primary' });
+      stationPrompt(ctx, { text: 'Add sugar', slot: 'primary' });
       const j = this.sugarJar;
       if (j) {
         const to = j.root.position.clone();
@@ -743,7 +748,7 @@ class CoffeeActivity implements Activity {
     this.circle.reset();
     this.setPhase('stir');
     ctx.ui.instruction('Stir it!', 'Circle around the mug — or tap 3×');
-    ctx.ui.prompt({ text: 'Stir', slot: 'primary' });
+    stationPrompt(ctx, { text: 'Stir', slot: 'primary' });
   }
 
   private placeSpoon(dt: number): void {
@@ -785,7 +790,7 @@ class CoffeeActivity implements Activity {
     const chris = ctx.walker.character;
     this.setPhase('setDown');
     ctx.walker.face(this.standYaw);
-    this.shotTable.apply(ctx, 2.8);
+    this.useShot(ctx, this.shotTable, 2.8);
     if (!m) {
       this.complete(ctx);
       return;
@@ -922,6 +927,12 @@ class CoffeeActivity implements Activity {
   }
 
   // ── bits ──────────────────────────────────────────────────────────────────
+
+  private useShot(ctx: ActivityContext, s: Shot, stiffness: number): void {
+    if (this.activeShot && this.activeShot !== s) this.activeShot.release();
+    this.activeShot = s;
+    s.apply(ctx, stiffness);
+  }
 
   /** Chris's line, anchored on-screen near the station during close-ups (he stands at the frame edge). */
   private talk(ctx: ActivityContext, text: string, seconds = 2, mood: 'normal' | 'excited' = 'normal'): void {

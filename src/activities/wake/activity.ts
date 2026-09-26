@@ -132,6 +132,8 @@ class WakeActivity implements Activity {
   private songAcc: number | null = null;
   private songTries = 0;
   private coffeePayoff = false;
+  /** ?test=1 telemetry: how/when the coffee payoff played. */
+  private payoffLog: { at: number; cut: boolean; where: 'kitchen' | 'montage'; singing: boolean } | null = null;
   private mug: THREE.Object3D | null = null;
   private mugProp: MugProp | null = null;
   private mugHome: { parent: THREE.Object3D; pos: THREE.Vector3; quat: THREE.Quaternion } | null = null;
@@ -249,6 +251,7 @@ class WakeActivity implements Activity {
       playT: this.playT,
       cutIn: this.cutIn,
       coffeePayoff: this.coffeePayoff,
+      payoff: this.payoffLog,
       ashleyReady: this.ashleyReady,
       rescued: this.rescued,
       girls: this.girls.map((g) => ({ id: g.id, style: g.style, phase: g.phase, drifts: g.drifts, x: g.c.root.position.x, z: g.c.root.position.z })),
@@ -524,7 +527,7 @@ class WakeActivity implements Activity {
     this.spots.cancelWalk();
     ctx.walker.enabled = false;
     ctx.camera.shot({ position: { x: at.x + 1.1, y: at.y + 2.7, z: at.z + 4.1 }, target: { x: at.x - 0.15, y: at.y + 0.95, z: at.z - 0.15 }, fov: 40 }, 4);
-    ctx.camera.rig.snap();
+    ctx.camera.snap();
   }
 
   private endCutIn(): void {
@@ -532,7 +535,7 @@ class WakeActivity implements Activity {
     this.cutIn = false;
     if (this.phase === 'play' && !this.song) {
       this.ctx!.camera.follow(null);
-      this.ctx!.camera.rig.snap();
+      this.ctx!.camera.snap();
     }
   }
 
@@ -542,56 +545,67 @@ class WakeActivity implements Activity {
     this.ashLane.run(async (s) => {
       const mug = this.mug;
       if (mug) {
-        // ── the Act I payoff: she finds her coffee ──
+        // ── the Act I payoff: she finds her coffee… ──
         mug.getWorldPosition(v1);
         freeSpotNear((x, z, r) => ctx.world.free(x, z, r), v1.x, v1.z, Math.PI / 2, this.exitOut, [0.55, 0.7, 0.85, 1.0]);
         const stand = { x: this.exitOut.x, y: 0, z: this.exitOut.z };
         await s.walk(a, stand, { faceYaw: yawTo(stand.x, stand.z, v1.x, v1.z) });
         a.lookAt(v1);
-        await s.until(() => this.canCutIn(), 6);
+        // …and waits for a calm moment to enjoy it (never mid-song, mid-guide or over a girl's big moment). If the
+        // girls beat her to the table, the payoff happens during the breakfast montage instead.
+        await s.until(() => this.phase !== 'play' || this.canCutIn());
+        if (this.phase !== 'play') return;
         // A short camera cut-in only when Chris is elsewhere (in the kitchen he sees it anyway).
-        const cut = this.canCutIn() && dist2(ctx.walker.position, a.root.position) > 5;
+        const cut = dist2(ctx.walker.position, a.root.position) > 5;
+        this.payoffLog = { at: this.playT, cut, where: 'kitchen', singing: !!this.song };
         if (cut) this.beginCutIn(a.root.position);
         await s.wait(cut ? 0.5 : 0);
-        a.play('grab');
-        await s.wait(0.35);
-        this.rememberMugHome(mug);
-        holdProp(mug, a, 'handR');
-        this.mugHeld = true;
-        a.setHold('mug');
-        a.lookAt(null);
-        ctx.audio.play('mugPick');
-        await s.wait(0.5);
-        const d = a.play('sip');
-        await s.wait(d * 0.55);
-        if (ctx.state.coffee.made) {
-          a.emote('heart', 2.4);
-          a.setExpression('love', 2.6);
-          a.socket('overhead').getWorldPosition(v2);
-          ctx.fx.burst('heart', v2, { count: 10 });
-          ctx.audio.play('heart');
-          this.talk.say(a, 'Mmm… you’re the best.', { mood: 'normal', seconds: 2.4 });
-          this.coffeePayoff = true;
-          await s.wait(1.4);
-          ctx.npcs.faceToward(a, ctx.family.chris.root.position);
-          await s.wait(0.45);
-          a.play('thumbsUp');
-          if (!cut) ctx.family.chris.emote('heart', 1.5);
-          await s.wait(1.4);
-        } else {
-          this.talk.say(a, 'Mmm. Coffee.', { seconds: 1.6 });
-          await s.wait(1.4);
-        }
+        await this.coffeeBeat(s, mug, !cut);
         this.endCutIn();
-        a.setHold('none');
-        this.mugBack();
-        ctx.audio.play('mugPlace', { volume: 0.7 });
         await s.wait(0.4);
       } else {
         await this.ashleyMakesCoffee(s);
       }
       await this.ashleyCereal(s);
     });
+  }
+
+  /** Ashley picks up the coffee Chris made, sips — heart — "you're the best", thumbs up; puts it back down. */
+  private async coffeeBeat(s: Step, mug: THREE.Object3D, chrisSees: boolean): Promise<void> {
+    const ctx = this.ctx!;
+    const a = ctx.family.ashley;
+    a.play('grab');
+    await s.wait(0.35);
+    this.rememberMugHome(mug);
+    holdProp(mug, a, 'handR');
+    this.mugHeld = true;
+    a.setHold('mug');
+    a.lookAt(null);
+    ctx.audio.play('mugPick');
+    await s.wait(0.5);
+    const d = a.play('sip');
+    await s.wait(d * 0.55);
+    if (ctx.state.coffee.made) {
+      a.emote('heart', 2.4);
+      a.setExpression('love', 2.6);
+      a.socket('overhead').getWorldPosition(v2);
+      ctx.fx.burst('heart', v2, { count: 10 });
+      ctx.audio.play('heart');
+      this.talk.say(a, 'Mmm… you’re the best.', { mood: 'normal', seconds: 2.4 });
+      this.coffeePayoff = true;
+      await s.wait(1.4);
+      ctx.npcs.faceToward(a, ctx.family.chris.root.position);
+      await s.wait(0.45);
+      a.play('thumbsUp');
+      if (chrisSees) ctx.family.chris.emote('heart', 1.5);
+      await s.wait(1.4);
+    } else {
+      this.talk.say(a, 'Mmm. Coffee.', { seconds: 1.6 });
+      await s.wait(1.4);
+    }
+    a.setHold('none');
+    this.mugBack();
+    ctx.audio.play('mugPlace', { volume: 0.7 });
   }
 
   /** No coffee this morning (coffee chore skipped): a playful "where's my coffee?" and she makes it herself. */
@@ -861,6 +875,7 @@ class WakeActivity implements Activity {
   private burrito(g: GirlRt): void {
     const ctx = this.ctx!;
     this.setPhase(g, 'use');
+    this.moment(4.2);
     const bed = ctx.world.bed(g.id);
     bed.setBlanket('burrito');
     bed.wiggle(1);
@@ -1024,6 +1039,7 @@ class WakeActivity implements Activity {
     if (!sg) return;
     sg.view.close();
     this.song = null;
+    this.objectiveDirty = true;
     this.ctx?.family.chris.cancelAction();
   }
 
@@ -1032,6 +1048,7 @@ class WakeActivity implements Activity {
   private sleepwalker(g: GirlRt): void {
     const ctx = this.ctx!;
     this.setPhase(g, 'use');
+    this.moment(3);
     g.upAt = this.playT;
     const c = g.c;
     const chris = ctx.family.chris;
@@ -1173,6 +1190,7 @@ class WakeActivity implements Activity {
       a.setHold('none');
       for (const g of this.girls) this.placeBowl(g);
       const top = this.tableTop(new THREE.Vector3());
+      const payoffDue = !this.coffeePayoff && ctx.state.coffee.made && !!this.mug;
       ctx.camera.shot({ position: { x: top.x + 0.2, y: top.y + 2.1, z: top.z + 4.3 }, target: { x: top.x, y: top.y + 0.3, z: top.z - 0.35 }, fov: 44 }, 3);
       const stand = this.tableStand();
       if (dist2(a.root.position, stand) > 0.4) void ctx.npcs.walkTo(a, stand, { faceYaw: yawTo(stand.x, stand.z, top.x, top.z), style: 'run' });
@@ -1189,7 +1207,7 @@ class WakeActivity implements Activity {
       if (dist2(ctx.walker.position, { x: out.x, y: 0, z: out.z }) > 6) {
         ctx.walker.teleport(out.x, out.z, chrisFace);
         ctx.npcs.place(dog, { x: dogSpot.x + 0.6, y: 0, z: dogSpot.z + 0.4 }, 0);
-        ctx.camera.rig.snap();
+        ctx.camera.snap();
       } else ctx.walker.face(yawTo(ctx.walker.position.x, ctx.walker.position.z, top.x, top.z)); // already here: no walking across the shot
       void ctx.npcs.walkTo(dog, { x: dogSpot.x, y: 0, z: dogSpot.z }, { style: 'run' }).then(() => {
         if (!this.host.alive) return;
@@ -1198,8 +1216,19 @@ class WakeActivity implements Activity {
         dog.emote('heart', 2);
         ctx.audio.play('dogWhine', { volume: 0.5 });
       });
-      this.instr('Breakfast time!', 'Crunch, crunch, giggle.', 4.6);
+      this.instr('Breakfast time!', 'Crunch, crunch, giggle.', 1.5);
       ctx.audio.play('cheer', { volume: 0.6 });
+      if (payoffDue) {
+        // She never got a quiet moment with her coffee: she enjoys it now, at the table.
+        const mug = this.mug!;
+        this.payoffLog = { at: this.playT, cut: false, where: 'montage', singing: false };
+        await s.until(() => !ctx.npcs.isBusy(a), 3);
+        mug.getWorldPosition(v1);
+        ctx.npcs.faceToward(a, v1);
+        await s.wait(0.4);
+        await this.coffeeBeat(s, mug, true);
+      }
+      await s.wait(payoffDue ? 0 : 1.4);
       for (let k = 0; k < 7; k++) {
         const g = this.girls[k % 3]!;
         ctx.audio.play('crunch', { pitch: 0.85 + ((k * 37) % 10) / 25, volume: 0.9 });

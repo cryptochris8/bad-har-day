@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import type { BodySpec } from './spec';
 
-export const MOUTHS = ['smile', 'bigSmile', 'grin', 'open', 'o', 'pout', 'wavy', 'yawn', 'eek', 'smirk'] as const;
+export const MOUTHS = ['smile', 'bigSmile', 'grin', 'open', 'o', 'pout', 'wavy', 'yawn', 'smirk'] as const;
 export type MouthKind = (typeof MOUTHS)[number];
 export const EYE_SHAPES = ['open', 'joy', 'closed', 'squeeze'] as const;
 export type EyeShape = (typeof EYE_SHAPES)[number];
