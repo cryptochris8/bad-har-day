@@ -1,4 +1,5 @@
-// STUB (integration) — replaced by the trash activity's author.
-import { placeholder } from '../placeholder';
+// TAKE OUT THE TRASH — Act I free-roam chore (docs/GDD.md §4.4). See ./activity.ts.
+import type { Activity } from '../types';
+import { TakeOutTrash } from './activity';
 
-export const create = placeholder('trash', "Take out the trash");
+export const create = (): Activity => new TakeOutTrash();

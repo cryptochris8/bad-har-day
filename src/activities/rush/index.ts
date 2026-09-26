@@ -1,4 +1,4 @@
-// STUB (integration) — replaced by the rush activity's author.
-import { placeholder } from '../placeholder';
+// ACT IV — "OUT THE DOOR" (activity 'rush'), incl. Ashley leaving for work at 7:45. See ./activity.ts.
+import { createRush } from './activity';
 
-export const create = placeholder('rush', "Out the door");
+export const create = createRush;

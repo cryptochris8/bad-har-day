@@ -8,6 +8,7 @@
 //   sway=1 (animated head motion)  three=1 (three girls on stools)  brushes=1 (the four brushes, black glowing)
 //   yaw=deg (girl yaw override)  dist=m (dollhouse distance override)  flip=1 (hair flip loop)
 //   fam=1 (use the real family girls from src/family instead of the mannequin)  nobrush=1 (hide the brush mesh)
+//   mirror=1 (with three=1: a vanity mirror with the Act III reflection; __DEV__.mirrorImage() dumps the RT)
 //   cam=x,y,z&look=x,y,z&fov=… (explicit framing)
 // Drag on the hair to brush it (downward strokes clear tangles, work from the ends up); drag elsewhere to orbit.
 // Keys: M markers · B bedhead · R re-roll tangles · F hair flip · 1-4 brush kind
@@ -22,6 +23,7 @@ import { eyeParts } from '../src/render/models/common';
 import { modelMaterial } from '../src/render/models/materials';
 import { HAIR_COLORS, PAL, SKIN_TONES } from '../src/render/palette';
 import { createHarness } from './harness';
+import { MirrorReflection } from '../src/activities/hair/mirror';
 import { createCharacter, DEFAULT_LOOKS } from '../src/family';
 import type { Character, GirlId } from '../src/family/types';
 
@@ -217,7 +219,7 @@ if (three) {
     const g = fam
       ? familyGirl((['addy', 'ellie', 'heidi'] as const)[i]!, colorParam ? hairHex : lk.hair, true)
       : mannequin(lk.spec, { pj: lk.pj, skin: SKIN_TONES[i === 2 ? 0 : 1]!, hair: colorParam ? hairHex : lk.hair, seed: seed + i * 31, length: lk.len, seated: true });
-    g.root.position.set((i - 1) * 0.72, 0, 0);
+    g.root.position.set((i - 1) * 0.72, 0, P.get('mirror') === '1' ? -0.45 : 0);
     g.root.rotation.y = Math.PI;
     h.scene.add(g.root);
     girls.push(g);
@@ -293,6 +295,30 @@ handBrush.root.visible = false;
 h.scene.add(handBrush.root);
 const brushParam = P.get('brush');
 const staticContact = brushParam ? brushParam.split(',').map(Number) : null;
+
+// ── mirror test (mirror=1, with three=1): a vanity mirror in front of the seated girls + a wall behind it ──
+let mirrorFx: MirrorReflection | null = null;
+if (P.get('mirror') === '1') {
+  const wb = new GeoBuilder(true, true);
+  wb.box(4, 2.6, 0.12, PAL.wallSky, { at: [0, 1.3, -1.12] }); // wall BEHIND the mirror (must be clipped)
+  wb.box(2.4, 1.05, 0.06, PAL.woodWarm, { at: [0, 1.35, -1.02] }); // frame
+  wb.box(2.6, 0.86, 0.5, PAL.cabinetCream, { at: [0, 0.43, -0.8] }); // vanity
+  wb.box(5, 0.02, 5, PAL.floorTile, { at: [0, 0.01, 0] });
+  wb.box(4, 2.6, 0.12, PAL.wallButter, { at: [0, 1.3, 2.4] }); // wall behind the camera (seen in the mirror)
+  const room = new THREE.Mesh(wb.build(), modelMaterial());
+  h.scene.add(room);
+  const mirrorMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.92), new THREE.MeshBasicMaterial({ color: PAL.mirror }));
+  mirrorMesh.position.set(0, 1.35, -0.985);
+  h.scene.add(mirrorMesh);
+  mirrorFx = new MirrorReflection(h.renderer.renderer, h.scene, mirrorMesh, { width: 640, height: 320, hz: 30 });
+  mirrorFx.include(room);
+  for (const g of girls) mirrorFx.include(g.root);
+  h.scene.traverse((o) => {
+    if ((o as THREE.Light).isLight) mirrorFx!.includeOne(o);
+  });
+  (window.__DEV__ ??= {}).mirrorImage = () => mirrorFx!.image();
+  (window.__DEV__ ??= {}).mirrorProbe = () => mirrorFx!.probe();
+}
 
 // ── camera ────────────────────────────────────────────────────────────────────
 function frameView(): void {
@@ -496,6 +522,7 @@ h.onUpdate((dt, t) => {
     else g.hair.update(dt);
   }
   for (const b of brushes) b.update(dt);
+  mirrorFx?.update(dt, h.camera);
   handBrush.update(dt);
   // Brush mesh placement.
   const bg = active ?? (staticContact ? girls[0]! : null);

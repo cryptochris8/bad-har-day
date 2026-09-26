@@ -68,7 +68,7 @@ export type AnchorId =
   | 'curtainHeidi' // stand here to open the curtains
   // kitchen
   | 'coffeeMaker' // stand here, facing the coffee maker (close-up station)
-  | 'ashleySpot' // where Ashley's finished coffee is set down (counter/table spot)
+  | 'ashleySpot' // ON the table (y = table height): where Ashley's finished coffee sits — a prop spot, not a standing spot
   | 'sink' // stand here for dishes (sink + dishwasher station)
   | 'lunchCounter' // stand here for lunch prep (station)
   | 'fridge'

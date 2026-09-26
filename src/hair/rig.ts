@@ -81,6 +81,10 @@ function makeRT(c: Chain, rec: TubeRec, simBase: number): ChainRT {
 // Proxy resolution.
 const PV = 16;
 
+/** Soft (brushing) markers only flag real knots; Mom's inspection flags anything noticeable. */
+export const MARKER_SOFT_T = 0.32;
+export const MARKER_INSPECT_T = 0.1;
+
 // Sprite kinds laid out in one buffer: markers, frizz ×2, flyaways, glints.
 const FLYAWAYS = 7;
 const GLINTS = 6;
@@ -972,11 +976,11 @@ export class GirlHairRig implements HairRig {
         if (kind === 0) {
           u = (col + 0.5) / this.cols;
           v = (row + 0.5) / this.rows;
-          if (this.markers !== 'off' && tg > 0.15) {
-            const inspect = this.markers === 'inspect';
+          const inspect = this.markers === 'inspect';
+          if (this.markers !== 'off' && tg > (inspect ? MARKER_INSPECT_T : MARKER_SOFT_T)) {
             const pulse = inspect ? 0.5 + 0.5 * Math.sin(t * 7 + cell) : 0;
-            target = inspect ? 0.75 + 0.25 * pulse : 0.72;
-            size = (inspect ? 0.034 + 0.012 * pulse : 0.027) + 0.012 * tg;
+            target = inspect ? 0.75 + 0.25 * pulse : 0.35 + 0.4 * tg;
+            size = (inspect ? 0.034 + 0.012 * pulse : 0.022) + 0.012 * tg;
             hex = inspect ? PAL.knot : knotSoft;
           }
           rot = -t * (this.markers === 'inspect' ? 2.4 : 1.1) + cell * 1.7;
@@ -984,7 +988,7 @@ export class GirlHairRig implements HairRig {
         } else if (kind === 1) {
           u = (col + 0.2 + 0.6 * rnd(seed, cell, 3)) / this.cols;
           v = (row + 0.15 + 0.7 * rnd(seed, cell, 4)) / this.rows;
-          target = sstep(0.2, 0.55, tg) * 0.95;
+          target = sstep(0.32, 0.7, tg) * 0.9;
           size = 0.02 + 0.016 * tg;
           rot = (rnd(seed, cell, 9) - 0.5) * 2.2 + Math.sin(t * 1.3 + cell) * 0.05;
           hex = this.frizzHex;
@@ -993,7 +997,7 @@ export class GirlHairRig implements HairRig {
           // Tangled cluster: a little looped scribble near the section centre.
           u = (col + 0.35 + 0.3 * rnd(seed, cell, 7)) / this.cols;
           v = (row + 0.4 + 0.2 * rnd(seed, cell, 8)) / this.rows;
-          target = sstep(0.38, 0.7, tg) * 0.9;
+          target = sstep(0.5, 0.85, tg) * 0.85;
           size = 0.018 + 0.02 * tg;
           rot = rnd(seed, cell, 10) * 6.28;
           hex = this.frizzHex;

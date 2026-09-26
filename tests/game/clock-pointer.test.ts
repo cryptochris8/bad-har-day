@@ -138,3 +138,23 @@ describe('PointerImpl', () => {
     p.dispose();
   });
 });
+
+describe('PointerImpl — virtual start', () => {
+  it('stays centred before any real input and warp() activates the virtual cursor', () => {
+    const el = fakeCanvas();
+    const p = new PointerImpl(el, el);
+    p.enable();
+    p.update(0.016, ctl(), 'gamepad');
+    expect(p.x).toBe(200);
+    expect(p.y).toBe(100);
+    expect(p.pressed || p.down).toBe(false);
+    p.warp(0, -0.5);
+    expect(p.active).toBe(true);
+    expect(p.source).toBe('virtual');
+    expect(p.ndcY).toBeCloseTo(-0.5);
+    p.update(0.016, ctl({ primary: true, primaryPressed: true }), 'gamepad');
+    expect(p.down && p.pressed).toBe(true);
+    expect(p.y).toBeCloseTo(150);
+    p.dispose();
+  });
+});

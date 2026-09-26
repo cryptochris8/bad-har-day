@@ -696,13 +696,13 @@ export function buildLayout(opts: LayoutOpts): HairLayout {
   const ps = partSide === 0 ? 1 : partSide;
   const tuftSpots: [number, number, number, number, number, number][] = [
     // phi, theta, length, base half-width, sideways curl, up bias — flipped-up locks, not horns
-    [0.12, Math.PI - 0.3 * ps, 0.075, 0.018, 0.6, 1.0], // crown cowlick (the classic sprout)
-    [0.6, 0.55 * ps, 0.06, 0.03, -0.9, 0.12], // flicks near the part (sideways, lifting at the end)
-    [0.75, -1.0 * ps, 0.058, 0.03, 0.8, 0.1],
-    [1.2, 1.5, 0.07, 0.033, 0.3, 0.25], // side flicks over the ears
-    [1.3, -1.6, 0.065, 0.033, -0.3, 0.2],
-    [1.35, 2.3, 0.07, 0.032, -0.4, 0.12], // back-side flicks
-    [1.05, -2.55, 0.065, 0.032, 0.45, 0.25],
+    [0.12, Math.PI - 0.3 * ps, 0.07, 0.016, 0.9, 0.9], // crown cowlick (the classic sprout, curling over)
+    [0.6, 0.55 * ps, 0.05, 0.028, -1.1, 0.1], // flicks near the part (sideways, lifting at the end)
+    [0.75, -1.0 * ps, 0.048, 0.028, 1.0, 0.08],
+    [1.2, 1.5, 0.055, 0.03, 0.8, 0.2], // side flicks over the ears
+    [1.3, -1.6, 0.052, 0.03, -0.8, 0.15],
+    [1.35, 2.3, 0.055, 0.03, -0.9, 0.1], // back-side flicks
+    [1.05, -2.55, 0.05, 0.03, 0.95, 0.2],
   ];
   tuftSpots.forEach(([phi0, th0, len0, w0, curl, up], k) => {
     const phi = phi0 + (r01(seed, 50, k) - 0.5) * 0.1;

@@ -46,6 +46,15 @@ export const STALL_MS = 3000;
 export const RETRY_MS = 1000;
 /** At most this many automatic rebuilds per minute (then wait for a user gesture). */
 const MAX_REBUILDS_PER_MIN = 4;
+/**
+ * Circuit breaker for hosts with NO usable audio device (headless Chrome, locked-down kiosks): a context that errors
+ * before it has run for DEVICE_OK_MS counts as a device failure. After a failure, unlock() is ignored for
+ * ERROR_COOLDOWN_MS (no rebuild per key press), and after MAX_DEVICE_FAILURES in a row audio stays off for the
+ * session — each rebuild is expensive (mixer graph + pluck pre-rendering) and would stall the game.
+ */
+export const MAX_DEVICE_FAILURES = 3;
+export const ERROR_COOLDOWN_MS = 5000;
+const DEVICE_OK_MS = 20000;
 /** Start offset for scheduled one-shots (s): a hair ahead of "now" so the attack is never clipped. */
 const START_DELAY = 0.005;
 /** Default music crossfade (s). */
@@ -138,6 +147,11 @@ export class WebAudioEngine implements AudioEngine {
   private watchWall = 0;
   private lastRetry = -Infinity;
   private readonly rebuilds: number[] = [];
+  private deviceFailures = 0;
+  private lastError = -Infinity;
+  private runningSince = -Infinity;
+  /** Audio permanently off for this session (no usable device). */
+  private gaveUp = false;
   private cancelWarm: (() => void) | null = null;
   private analyser: AnalyserNode | null = null;
   private meterBuf: Float32Array<ArrayBuffer> | null = null;
@@ -157,7 +171,14 @@ export class WebAudioEngine implements AudioEngine {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   unlock(): void {
-    if (this.disposed) return;
+    // Right after a device error, don't rebuild on every gesture (see MAX_DEVICE_FAILURES).
+    if (!this.ctx && wallNow() - this.lastError < ERROR_COOLDOWN_MS) return;
+    this.doUnlock();
+  }
+
+  /** unlock() without the post-error cooldown (recover() rebuilds at once, within its own per-minute cap). */
+  private doUnlock(): void {
+    if (this.disposed || this.gaveUp) return;
     try {
       let ctx = this.ctx;
       if (ctx && ctx.state === 'running') {
@@ -267,7 +288,7 @@ export class WebAudioEngine implements AudioEngine {
     while (this.rebuilds.length && now - this.rebuilds[0]! > 60000) this.rebuilds.shift();
     if (this.rebuilds.length < MAX_REBUILDS_PER_MIN && hasBeenActive() && !docHidden()) {
       this.rebuilds.push(now);
-      this.unlock();
+      this.doUnlock();
     } else this.armGestureResume();
   }
 
@@ -346,6 +367,7 @@ export class WebAudioEngine implements AudioEngine {
       const st = this.ctx?.state as CtxState | undefined;
       if (!st || this.disposed) return;
       if (st === 'running') {
+        this.runningSince = wallNow();
         this.disarmGestureResume();
         this.resetWatch();
       } else if (st === 'closed') this.recover();
@@ -357,6 +379,20 @@ export class WebAudioEngine implements AudioEngine {
 
   private readonly onCtxError = (): void => {
     try {
+      const now = wallNow();
+      // A context that ran fine for a while and then errored is a real device change (headphones unplugged…):
+      // start counting afresh. One that errors almost immediately means there is no usable device.
+      if (now - this.runningSince > DEVICE_OK_MS && this.runningSince > -Infinity) this.deviceFailures = 0;
+      this.deviceFailures++;
+      this.lastError = now;
+      this.runningSince = -Infinity;
+      if (this.deviceFailures >= MAX_DEVICE_FAILURES) {
+        this.gaveUp = true;
+        this.teardown();
+        this.disarmGestureResume();
+        console.info('[audio] no usable audio device — sound disabled for this session');
+        return;
+      }
       this.recover();
     } catch {
       /* ignore */

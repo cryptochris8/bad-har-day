@@ -9,6 +9,7 @@ import { Rng, hashInts, hashString } from '../core/rng';
 import { GIRLS, type Character, type Family, type GirlId } from '../family/types';
 import { NO_CONTROLS, type ControlScheme, type GameControls, type InputManager, type PointerInput } from '../input/types';
 import { ACTS, SCHOOL_DEADLINE, buildReport, type ActNumber, type ActivityId, type ActivityRecord, type ActivityResult, type ChoreId, type DayPlan, type MorningReport, type Stars } from '../plan';
+import { COFFEE_COLORS, makeMug } from '../props';
 import { disposeTree } from '../render/models/common';
 import type { Fx, Projector } from '../render/types';
 import type { Settings } from '../storage/types';
@@ -163,6 +164,7 @@ export class Morning {
   private frameClicks: string[] = [];
   private scheme: ControlScheme | null = null;
   private prompt: ReturnType<InteractionsImpl['update']> = null;
+  private gamePromptShown = false;
   private disposed = false;
   private inGirlRoom: string | null = null;
   private readonly ui: UiManager;
@@ -297,10 +299,14 @@ export class Morning {
     d.npcs.update(dt);
     d.camera.update(dt);
 
-    const canUse = this.modal === 0 && d.walker.enabled && !d.walker.busy && !this.current;
+    // Interactions work in free roam AND during activities that leave the walker enabled (dog, trash, wake, rush…).
+    // While an activity runs, the game only writes the prompt when it has one (and clears it once when it goes
+    // away), so activities can use ui.prompt themselves the rest of the time.
+    const canUse = this.modal === 0 && d.walker.enabled && !d.walker.busy;
     const p = d.walker.position;
     this.prompt = d.interactions.update(p.x, p.z, ctl, canUse && dt > 0);
-    if (!this.current) d.ui.prompt(this.prompt);
+    if (!this.current || this.prompt || this.gamePromptShown) d.ui.prompt(this.prompt);
+    this.gamePromptShown = !!this.prompt;
     this.quietCheck();
 
     this.scheme = cur ? safeScheme(cur.activity) : this.modal > 0 ? null : this.prompt ? ROAM_USE : ROAM_IDLE;
@@ -464,11 +470,23 @@ export class Morning {
     ashley.setExpression('happy');
     ashley.setOutfit(act >= 4 ? 'day' : 'sleep');
     world.bed('master').setBlanket('made');
-    npcs.placeAt(ashley, 'ashleySpot');
+    const seat = world.anchor('seatAshley');
+    npcs.place(ashley, { x: seat.x + Math.sin(seat.yaw) * -0.5, y: 0, z: seat.z + Math.cos(seat.yaw) * -0.5 }, seat.yaw);
+    if (!this.persist.getObjectByName('ashleys-coffee')) {
+      const mug = makeMug('sunflower');
+      mug.setFill(0.85);
+      mug.setLiquid(COFFEE_COLORS.splash);
+      mug.setSteam(true);
+      mug.root.name = 'ashleys-coffee';
+      const spot = world.anchor('ashleySpot');
+      mug.root.position.set(spot.x, spot.y, spot.z);
+      this.persist.add(mug.root);
+    }
     family.chris.setSleepiness(0);
     if (act >= 5) {
       family.chris.setOutfit('day');
       this.state.ashleyLeft = true;
+      world.car('ashley').root.visible = false; // she left for work at 7:45 (resetWorldState shows it again)
       npcs.place(ashley, { x: 0, y: 0, z: -60 }, 0);
       const s = world.anchor('frontDoorOut');
       d.walker.teleport(s.x, s.z, s.yaw);

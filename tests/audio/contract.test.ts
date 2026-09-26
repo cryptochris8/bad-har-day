@@ -159,7 +159,9 @@ describe('loops, music and babble schedule on a (fake) context', () => {
       l.stop(3, 0.2);
       for (const s of fake.sources()) {
         expect(s.stopAt, id).not.toBeNull();
-        expect(s.stopAt!, id).toBeLessThanOrEqual(3 + 0.2 + 0.1);
+        // One-shot events already scheduled (a brew bubble's noise tail) may ring ≤ 0.4 s past the stop — silently,
+        // the loop's master gain is already at 0 — but every source still has a finite stop time (no leaks).
+        expect(s.stopAt!, id).toBeLessThanOrEqual(3 + 0.2 + 0.4);
       }
       expect(() => l.set(1, 1, 4)).not.toThrow();
     }

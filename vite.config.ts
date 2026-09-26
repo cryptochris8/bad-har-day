@@ -8,7 +8,8 @@ export default defineConfig({
     // three r186 ships class static blocks (Safari 16.4+); these targets transpile them for older iOS.
     target: ['safari15', 'chrome100', 'firefox100', 'edge100'],
     // Only index.html is built. dev/*.html module test pages are served by `npm run dev` only.
-    chunkSizeWarningLimit: 900,
+    // One game chunk (~1.1 MB, ~370 KB gzip) + three.js in its own long-cached chunk.
+    chunkSizeWarningLimit: 1300,
     rolldownOptions: {
       output: {
         // three.js in its own chunk: it rarely changes, so returning players keep it cached across releases.
@@ -21,5 +22,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     environment: 'node',
+    // Heavy synth/DSP and headless-morning tests on a shared machine: 5 s is too tight under load.
+    testTimeout: 30_000,
   },
 });

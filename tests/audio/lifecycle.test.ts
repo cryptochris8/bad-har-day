@@ -3,7 +3,7 @@
 // tabs, a wedged clock, and "nothing ever throws into the game loop". Plus: the remembered music
 // track and live loops survive a rebuilt context.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAudio, createAudioEngine, RETRY_MS, STALL_MS } from '../../src/audio/index';
+import { createAudio, createAudioEngine, ERROR_COOLDOWN_MS, MAX_DEVICE_FAILURES, RETRY_MS, STALL_MS } from '../../src/audio/index';
 import type { AudioEngine, BabbleMood, LoopId, MusicId, SfxId, Voice } from '../../src/audio/types';
 import { type FakeEnv, FakeAudioContext, installFakeAudio, uninstallFakeAudio } from './fakeAudio';
 
@@ -192,14 +192,31 @@ describe('device loss & interruptions', () => {
     a.dispose();
   });
 
-  it('automatic rebuilds are capped (no loop); a gesture still recovers', () => {
+  it('no usable audio device (contexts keep erroring): capped rebuilds, then sound stays off — no rebuild per key press', () => {
     env.activation.hasBeenActive = true;
     const a = createAudio();
     a.unlock();
     for (let i = 0; i < 8; i++) env.last().dispatchEvent(new Event('error'));
-    expect(env.ctxs().length).toBeLessThanOrEqual(6);
+    const built = env.ctxs().length;
+    expect(built).toBeLessThanOrEqual(MAX_DEVICE_FAILURES);
+    for (let i = 0; i < 5; i++) env.win.dispatchEvent(new Event('keydown'));
+    a.unlock();
+    expect(env.ctxs().length).toBe(built);
+    expect(a.unlocked).toBe(false);
+    expect(() => everything(a)).not.toThrow();
+    a.dispose();
+  });
+
+  it('one device error without activation: the next gesture after the cooldown recovers', () => {
+    const a = createAudio();
+    a.unlock();
+    env.last().dispatchEvent(new Event('error'));
+    expect(a.unlocked).toBe(false);
+    const now = performance.now();
+    const spy = vi.spyOn(performance, 'now').mockReturnValue(now + ERROR_COOLDOWN_MS + 100);
     env.win.dispatchEvent(new Event('keydown'));
     expect(a.unlocked).toBe(true);
+    spy.mockRestore();
     a.dispose();
   });
 });

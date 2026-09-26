@@ -74,9 +74,10 @@ interface Key {
 
 // Sky / ambient keyframes (minutes since midnight).
 const KEYS: readonly Key[] = [
-  { t: 300, skyTop: PAL.skyNightTop, skyHorizon: PAL.skyNightHorizon, glow: 0, glowColor: PAL.skyDawnHorizon, hemiSky: 0x3e4d86, hemiGround: 0x221d38, hemiI: 1.05, cloud: 0x2a3160, fog: 0x1c2552 },
-  { t: 315, skyTop: PAL.skyNightTop, skyHorizon: PAL.skyNightHorizon, glow: 0, glowColor: PAL.skyDawnHorizon, hemiSky: 0x3e4d86, hemiGround: 0x221d38, hemiI: 1.05, cloud: 0x2a3160, fog: 0x1c2552 },
-  { t: 345, skyTop: 0x16235a, skyHorizon: 0x4a4c8a, glow: 0.15, glowColor: 0xd98a8a, hemiSky: 0x48579a, hemiGround: 0x261f3e, hemiI: 1.08, cloud: 0x3a3a70, fog: 0x2b3268 },
+  // Night ambient is a touch brighter than "realistic" so the yard (the dog!) stays readable at 5:15.
+  { t: 300, skyTop: PAL.skyNightTop, skyHorizon: PAL.skyNightHorizon, glow: 0, glowColor: PAL.skyDawnHorizon, hemiSky: 0x4d5d9c, hemiGround: 0x2b2546, hemiI: 1.28, cloud: 0x2a3160, fog: 0x1c2552 },
+  { t: 315, skyTop: PAL.skyNightTop, skyHorizon: PAL.skyNightHorizon, glow: 0, glowColor: PAL.skyDawnHorizon, hemiSky: 0x4d5d9c, hemiGround: 0x2b2546, hemiI: 1.28, cloud: 0x2a3160, fog: 0x1c2552 },
+  { t: 345, skyTop: 0x16235a, skyHorizon: 0x4a4c8a, glow: 0.15, glowColor: 0xd98a8a, hemiSky: 0x5563a6, hemiGround: 0x2d2648, hemiI: 1.24, cloud: 0x3a3a70, fog: 0x2b3268 },
   { t: 360, skyTop: 0x2c3f86, skyHorizon: 0xf09a8a, glow: 0.55, glowColor: PAL.skyDawnHorizon, hemiSky: 0x7a70a6, hemiGround: 0x3a3050, hemiI: 1.12, cloud: 0xc98fa0, fog: 0x8a7aa0 },
   { t: 375, skyTop: 0x4661ae, skyHorizon: 0xffb08a, glow: 0.95, glowColor: PAL.skySunriseGlow, hemiSky: 0xc0a2b6, hemiGround: 0x4e4050, hemiI: 1.18, cloud: PAL.cloudDawn, fog: 0xd7a89a },
   { t: 390, skyTop: 0x5a86cf, skyHorizon: 0xffcb9c, glow: 0.8, glowColor: PAL.skySunriseGlow, hemiSky: 0xe2c6b6, hemiGround: 0x5e4e4a, hemiI: 1.22, cloud: 0xffd6c4, fog: 0xecc4ae },
@@ -169,7 +170,7 @@ export function lightingAt(minutes: number, weather: Weather, out?: LightingStat
   o.stars = 1 - smooth01(338, 378, m);
 
   // Key light: moon until ≈ 6:00, then the sun. Intensity dips at the hand-over.
-  const moonI = 0.9 * (1 - smooth01(342, 362, m));
+  const moonI = 1.15 * (1 - smooth01(342, 362, m));
   const [sa, sb, st] = segment(SUN, m);
   const su = st * st * (3 - 2 * st);
   const sunI = sa.i + (sb.i - sa.i) * su;
@@ -218,7 +219,10 @@ export function lightingAt(minutes: number, weather: Weather, out?: LightingStat
     o.hemiSky = mixHex(o.hemiSky, greyOf(o.hemiSky, 0.2), g * 0.8);
     o.glow *= 1 - g;
     o.sunDisc *= weather === 'cloudy' ? 0.45 : 0.15;
-    o.keyIntensity *= weather === 'cloudy' ? 0.72 : 0.52;
+    // Clouds dim the sun far more than they dim the (gameplay) moonlight.
+    const dayMul = weather === 'cloudy' ? 0.72 : 0.52;
+    const nightMul = weather === 'cloudy' ? 0.9 : 0.8;
+    o.keyIntensity *= nightMul + (dayMul - nightMul) * o.sunAmount;
     o.hemiIntensity *= weather === 'cloudy' ? 1.02 : 0.96;
     o.stars *= 0.35;
     o.sunbeam *= weather === 'cloudy' ? 0.55 : 0.3;

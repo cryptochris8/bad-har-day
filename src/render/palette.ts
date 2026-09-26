@@ -313,6 +313,12 @@ export const PAL = {
   cerealPanel: 0xffe07a,
   fobDark: 0x3a3f4a,
   treatBone: 0xf3dcb0,
+  // station chores (coffee / lunch / dishes activities)
+  coffeeMilky: 0xe2c8a2, // "way too much cream" end of the creamer ramp
+  creamPour: 0xfff3df, // creamer stream
+  coffeeSpill: 0x5a3822, // overflow puddle on the drip tray / counter
+  sugar: 0xfffdf7,
+  soapBubble: 0xe8f6ff,
 
   // ── UI (mirrored in CSS custom properties) ──
   uiCream: 0xfff6e9,
@@ -322,6 +328,55 @@ export const PAL = {
   uiMint: 0x6fd6b6,
   uiLilac: 0xb79cf5,
   uiSky: 0x7cc4f2,
+
+  // ── school run (Act V route + drive; appended by the drive activity) ──
+  laneWhite: 0xf7f3e8, // lane dashes, crosswalk stripes, stop lines
+  laneYellow: 0xf6c94c, // school-zone / drop-off paint
+  asphaltPatch: 0x444856, // darker asphalt (cross streets, patches)
+  gutter: 0x8d8f98,
+  signalBox: 0x2f3440, // traffic-light housings + poles
+  signalRedOn: 0xff4a3d,
+  signalRedOff: 0x5a2a2c,
+  signalYellowOn: 0xffc93a,
+  signalYellowOff: 0x5a4a26,
+  signalGreenOn: 0x4ff08a,
+  signalGreenOff: 0x21483a,
+  streetSign: 0x3f9a6a, // street-name sign green
+  signYellow: 0xf6d04a, // school-zone warning sign
+  poleGrey: 0x9aa0aa,
+  coneOrange: 0xff8a3d,
+  coneStripe: 0xfff6ee,
+  mailboxA: 0x5b7fb8,
+  mailboxB: 0xe0675a,
+  mailboxC: 0x3f8a8c,
+  hydrant: 0xe5483f,
+  benchWood: 0xc98a55,
+  pond: 0x7cc4e8,
+  pondDeep: 0x5aa6d6,
+  playRed: 0xff7a6b,
+  playBlue: 0x6fb6f0,
+  playYellow: 0xffc94a,
+  goose: 0xf6f3ec,
+  gooseShade: 0xd9d4ca,
+  gooseBeak: 0xff9a2e,
+  garbageGreen: 0x4f9a6a,
+  garbageCab: 0xeef2f0,
+  garbageStripe: 0xf6c94c,
+  strollerCoral: 0xff8f86,
+  strollerCanopy: 0x6fc7c0,
+  puddle: 0x8fb6d6,
+  puddleRim: 0x6e8aa6,
+  sprinklerHead: 0x5a9a5e,
+  water: 0xbfe6ff,
+  schoolFlag: 0x6fb6f0,
+  schoolFlagEmblem: 0xffd45e,
+  schoolRoof: 0x6b5a6e,
+  schoolDoor: 0x3f8a8c,
+  bikeFrameA: 0xff7a6b,
+  bikeFrameB: 0x6fd6b6,
+  bikeFrameC: 0xb79cf5,
+  distantHill: 0x86c07a,
+  distantHillFar: 0xa8d49a,
 } as const;
 
 export type PalKey = keyof typeof PAL;

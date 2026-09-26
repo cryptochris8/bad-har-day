@@ -169,6 +169,10 @@ export class PointerImpl implements PointerInput {
     this.x = ((ndcX + 1) / 2) * r.width;
     this.y = ((1 - ndcY) / 2) * r.height;
     this.source = 'virtual';
+    this.active = true;
+    const n = toNdc(this.x, this.y, r.width, r.height);
+    this.ndcX = n.x;
+    this.ndcY = n.y;
   }
 
   update(dt: number, controls: GameControls, device: InputDevice): void {
@@ -200,7 +204,7 @@ export class PointerImpl implements PointerInput {
       this.pressed = controls.primaryPressed;
       this.released = controls.primaryReleased;
       this.down = controls.primary;
-    } else {
+    } else if (this.lastRealEvent > -1e9) {
       if (recentReal || this.rawDown) this.source = this.realSource;
       this.x = this.realX;
       this.y = this.realY;
@@ -208,6 +212,9 @@ export class PointerImpl implements PointerInput {
       this.pressed = pressedEdge;
       this.released = releasedEdge;
       this.down = this.rawDown || (pressedEdge && releasedEdge);
+    } else {
+      // No real pointer yet and not steering virtually: keep the (centred / warped) cursor, no button.
+      this.pressed = this.released = this.down = false;
     }
     const n = toNdc(this.x, this.y, r.width, r.height);
     this.ndcX = n.x;

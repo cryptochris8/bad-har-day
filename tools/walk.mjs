@@ -9,9 +9,16 @@
 //         pad:<button>[:holdMs]  press a fake DualShock button index (needs --pad)
 //         tap:<css selector>     real touch/mouse tap on an element's centre
 //         sleep:<ms>             wait
+//         until:<js>             wait until the expression is truthy (60 s max)
+//         hold:<Code>:<js>       hold a key until the expression is truthy (40 s max)
+//         padhold:<button>:<js>  hold a pad button until the expression is truthy (needs --pad)
+//         click:<js → [x, y]>    mouse click at page coords (a touch tap with --mobile)
+//         tapxy:<js → [x, y]>    touch tap at page coords
+//         drag:<js → [x0,y0,x1,y1]>  mouse drag
 //         eval:<js>              evaluate JS (result printed)
 //         shot:<name>            screenshot → <prefix>-<name>.png
-// Options: --mobile (touch, DPR 2, 844×390 unless --w/--h), --w, --h, --pad (install a fake DS4), --url <base>
+// Options: --mobile (touch, DPR 2, 844×390 unless --w/--h), --w, --h, --pad (install a fake DS4), --url <base>,
+//          --audio (keep Web Audio; by default it is stubbed out — headless Chrome has no audio device)
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -24,7 +31,7 @@ for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a.startsWith('--')) {
     const next = args[i + 1];
-    const isStep = next !== undefined && /^(wait|key|pad|tap|sleep|eval|shot):/.test(next);
+    const isStep = next !== undefined && /^(wait|key|pad|tap|sleep|eval|shot|until|hold|padhold|click|tapxy|drag):/.test(next);
     if (next === undefined || next.startsWith('--') || isStep) opt[a.slice(2)] = true;
     else {
       opt[a.slice(2)] = next;
@@ -41,7 +48,12 @@ let server = null;
 let base = opt.url;
 if (!base) {
   const port = 5900 + (process.pid % 90);
-  server = await createServer({ server: { port, strictPort: false }, logLevel: 'error', clearScreen: false });
+  server = await createServer({
+    // No HMR / file watching: several agents edit the tree at once, and a reload mid-run kills the page.
+    server: { port, strictPort: false, hmr: false, watch: null },
+    logLevel: 'error',
+    clearScreen: false,
+  });
   await server.listen();
   base = server.resolvedUrls?.local?.[0] ?? `http://localhost:${port}/`;
 }
@@ -52,6 +64,15 @@ const browser = await chromium.launch({
 });
 const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: mobile ? 2 : 1, hasTouch: mobile, isMobile: mobile });
 const p = await ctx.newPage();
+if (!opt.audio)
+  await p.addInitScript(() => {
+    try {
+      Object.defineProperty(window, 'AudioContext', { value: undefined, configurable: true });
+      Object.defineProperty(window, 'webkitAudioContext', { value: undefined, configurable: true });
+    } catch {
+      /* ignore */
+    }
+  });
 if (opt.pad) {
   await p.addInitScript(() => {
     const mk = () => ({ pressed: false, touched: false, value: 0 });
@@ -93,13 +114,54 @@ try {
     } else if (kind === 'pad') {
       const [b, hold] = arg.split(':');
       await p.evaluate((n) => window.__pad.press(n), Number(b));
-      await p.waitForTimeout(Number(hold ?? 120));
+      await p.waitForTimeout(Number(hold ?? 260)); // ≥ 250 ms: slow software-GL frames can miss shorter presses
       await p.evaluate((n) => window.__pad.release(n), Number(b));
     } else if (kind === 'tap') {
       const box = await p.locator(arg).first().boundingBox();
       if (!box) throw new Error('tap target not found: ' + arg);
       if (mobile) await p.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
       else await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    } else if (kind === 'hold' || kind === 'padhold') {
+      const j = arg.indexOf(':');
+      const key = arg.slice(0, j);
+      const cond = arg.slice(j + 1);
+      if (kind === 'hold') await p.keyboard.down(key);
+      else await p.evaluate((n) => window.__pad.press(n), Number(key));
+      try {
+        await p.waitForFunction(cond, null, { timeout: 40000, polling: 30 });
+      } catch {
+        console.log(kind + ' timeout', cond);
+      }
+      if (kind === 'hold') await p.keyboard.up(key);
+      else await p.evaluate((n) => window.__pad.release(n), Number(key));
+    } else if (kind === 'click' || kind === 'tapxy') {
+      const xy = await p.evaluate(arg);
+      if (!xy) console.log('click target missing', arg);
+      else if (mobile || kind === 'tapxy') await p.touchscreen.tap(xy[0], xy[1]);
+      else {
+        await p.mouse.move(xy[0], xy[1], { steps: 4 });
+        await p.mouse.down();
+        await p.waitForTimeout(60);
+        await p.mouse.up();
+      }
+    } else if (kind === 'drag') {
+      const v = await p.evaluate(arg);
+      if (!v) console.log('drag target missing', arg);
+      else {
+        await p.mouse.move(v[0], v[1], { steps: 3 });
+        await p.mouse.down();
+        await p.mouse.move((v[0] + v[2]) / 2, (v[1] + v[3]) / 2, { steps: 6 });
+        await p.waitForTimeout(150);
+        await p.mouse.move(v[2], v[3], { steps: 6 });
+        await p.waitForTimeout(250);
+        await p.mouse.up();
+      }
+    } else if (kind === 'until') {
+      try {
+        await p.waitForFunction(arg, null, { timeout: 60000, polling: 100 });
+      } catch {
+        console.log('until timeout', arg);
+      }
     } else if (kind === 'sleep') await p.waitForTimeout(Number(arg));
     else if (kind === 'eval') {
       const r = await p.evaluate(arg);

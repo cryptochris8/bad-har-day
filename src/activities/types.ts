@@ -45,7 +45,10 @@ export interface GameClock {
 /** The player-controlled character in free roam (Chris). The game moves it from controls while `enabled`. */
 export interface Walker {
   readonly character: Character;
-  /** Read controls and move (camera-relative, collision via world.move). */
+  /**
+   * Read controls and move (camera-relative, collision via world.move). While false and idle (no walkTo / face in
+   * progress) the walker is SUSPENDED: it does not touch Chris's transform, so activities may pose or re-parent him.
+   */
   enabled: boolean;
   /** Walk speed (m/s, default 2.4). Activities may lower it (carrying the trash bag). */
   speed: number;
@@ -53,6 +56,8 @@ export interface Walker {
   /** Current velocity (m/s, world XZ). */
   readonly velocity: THREE.Vector3;
   readonly yaw: number;
+  /** A scripted walkTo is running (input ignored). */
+  readonly busy: boolean;
   teleport(x: number, z: number, yaw: number): void;
   /** Scripted walk along world.navPath (input ignored meanwhile). Resolves on arrival. */
   walkTo(target: Vec3Like, opts?: { speed?: number; faceYaw?: number }): Promise<void>;
@@ -94,6 +99,8 @@ export interface CameraDirector {
   follow(target?: THREE.Object3D | null): void;
   /** Take manual control with a goal (close-ups). Also switches the world cut-away to 'closeup' around the target. */
   shot(goal: CameraGoal, stiffness?: number): void;
+  /** Cut: jump straight to the current goal next frame (no easing). */
+  snap(): void;
   readonly mode: 'follow' | 'shot';
 }
 
@@ -113,6 +120,11 @@ export interface Interactable {
   onUse: () => void;
 }
 
+/**
+ * Works in Act I free roam AND during any activity that leaves ctx.walker.enabled = true (the game shows the nearest
+ * in-reach prompt and fires onUse on the slot's press). Activities using it should include that slot's button in
+ * their controls() scheme for touch.
+ */
 export interface Interactions {
   add(i: Interactable): () => void;
 }

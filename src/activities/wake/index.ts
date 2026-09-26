@@ -1,4 +1,4 @@
-// STUB (integration) — replaced by the wake activity's author.
-import { placeholder } from '../placeholder';
+// ACT II — "WAKE UP, GIRLS!" (activity 'wake'). See ./activity.ts.
+import { createWake } from './activity';
 
-export const create = placeholder('wake', "Wake up the girls");
+export const create = createWake;

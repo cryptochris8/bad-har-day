@@ -47,7 +47,12 @@ let server = null;
 let base = opt.url;
 if (!base) {
   const port = 5300 + (process.pid % 600);
-  server = await createServer({ server: { port, strictPort: false }, logLevel: 'error', clearScreen: false });
+  server = await createServer({
+    // No HMR / file watching: several agents edit the tree at once, and a reload mid-run kills the page.
+    server: { port, strictPort: false, hmr: false, watch: null },
+    logLevel: 'error',
+    clearScreen: false,
+  });
   await server.listen();
   base = server.resolvedUrls?.local?.[0] ?? `http://localhost:${port}/`;
 }

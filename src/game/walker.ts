@@ -93,6 +93,12 @@ export class WalkerImpl implements Walker {
     }
     const root = this.character.root;
     const s = this.scripted;
+    // Suspended: disabled, idle, nothing scripted → hands off (an activity may have seated / re-parented Chris, e.g.
+    // in the car). Follow whatever yaw the activity set so re-enabling doesn't snap him around.
+    if (!s && !this.enabled && this.faceTarget === null && this.velocity.x === 0 && this.velocity.z === 0) {
+      this.yawNow = root.rotation.y;
+      return;
+    }
     let speedNow = 0;
     if (s) {
       const before = { x: s.cursor.x, z: s.cursor.z };

@@ -79,39 +79,40 @@ const FRAG_BODY = /* glsl */ `
     outgoingLight = mix(outgoingLight, uRoot * 0.75, partLine * 0.9);
   }
 
-  // Angel-ring crescent across the head (tilted back): smooth upper edge, spiky lower edge that
-  // follows the locks (each lock carries a pointed lens of light).
+  // Soft glossy crescent across the head (an "angel ring" tilted back). Its thickness follows how much the
+  // surface faces the viewer, so from any camera it reads as a crescent that thins toward the silhouette;
+  // edges are soft; over the locks the band dips gently at each lock's crest (a soft scallop, no spikes).
   float isUnder = step(abs(layer - 2.0), 0.5);
   float isLock = step(0.5, layer) * (1.0 - isUnder);
-  float across = vHair.y;
+  float across = clamp(vHair.y, -1.0, 1.0);
+  vec3 Vw = normalize(vViewPosition);
+  float ndv = clamp(dot(normal, Vw), 0.0, 1.0);
   if (length(hp) < 1.45 && isUnder < 0.5) {
     vec3 ax = vec3(0.0, 0.93, -0.36);
     float ang = acos(clamp(dot(normalize(hp), ax), -1.0, 1.0));
-    float az = atan(hp.x, hp.z);
-    float zig = abs(fract(az * 3.3 + 0.25) - 0.5) * 2.0;
-    float spike = mix(zig, 1.0 - min(1.0, abs(across)), isLock);
-    float top = 0.93;
-    float bottom = top + 0.035 + 0.075 * spike * spike;
-    float ring = min((ang - top) / 0.02, (bottom - ang) / 0.03);
-    ring = min(ring, 1.0) - isLock * across * across * 0.9;
+    float crest = isLock * (1.0 - across * across);
+    float centre = 0.975 + 0.02 * crest;
+    float halfH = (0.026 + 0.06 * smoothstep(0.15, 0.85, ndv)) * (0.75 + 0.25 * crest);
+    float d = abs(ang - centre) / max(halfH, 1e-3);
+    float ring = 1.0 - smoothstep(0.35, 1.0, d);
+    ring *= 1.0 - isLock * smoothstep(0.55, 1.0, abs(across)) * 0.85;
     hl = max(hl, ring);
   }
-  // Thin streaks of light down the crest of the hanging locks (not every lock).
+  // Soft streaks of light down the crest of the hanging locks (not every lock).
   if (abs(layer - 1.0) < 0.5 || abs(layer - 3.0) < 0.5) {
     float hang = smoothstep(-0.04, -0.12, vHeadPos.y);
     float c2 = 0.58 + (vHair.w - 0.5) * 0.2;
-    float lens = 1.0 - (abs(vHair.x - c2) / 0.1 + across * across * 4.0);
-    hl = max(hl, lens * hang * step(0.3, vHair.w) * 0.75);
+    float lens = 1.0 - (abs(vHair.x - c2) / 0.11 + across * across * 3.2);
+    hl = max(hl, smoothstep(0.0, 0.6, lens) * hang * step(0.3, vHair.w) * 0.7);
   }
   float litK = smoothstep(0.62, 0.95, lit);
-  float hlA = smoothstep(0.0, 0.1, hl) * uShine * (1.0 - 0.9 * tg) * (0.3 + 0.7 * litK);
+  float hlA = clamp(hl, 0.0, 1.0) * uShine * (1.0 - 0.9 * tg) * (0.3 + 0.7 * litK);
   // Gloss keeps the hair's own hue: brighten it, then lift a little toward the sheen tint.
-  vec3 gloss = mix(outgoingLight * 1.75, uSheen * (0.8 + 0.3 * min(lit, 1.2)), 0.38);
-  outgoingLight = mix(outgoingLight, gloss, hlA * 0.9);
+  vec3 gloss = mix(outgoingLight * 1.7, uSheen * (0.8 + 0.3 * min(lit, 1.2)), 0.36);
+  outgoingLight = mix(outgoingLight, gloss, hlA * 0.85);
 
   // Soft lit rim (volume), fades with tangle.
-  vec3 Vw = normalize(vViewPosition);
-  float rim = smoothstep(0.62, 0.85, 1.0 - clamp(dot(normal, Vw), 0.0, 1.0));
+  float rim = smoothstep(0.62, 0.85, 1.0 - ndv);
   outgoingLight += uSheen * rim * 0.12 * min(lit, 1.0) * (0.4 + 0.6 * uShine) * (1.0 - tg);
 
   // Tangled sections: duller, flatter tone.
