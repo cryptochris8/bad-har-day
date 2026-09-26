@@ -15,6 +15,13 @@ import { screenEl } from './screen';
 
 const SCROLL_STEP = 80;
 
+/** A tap / click on the dimmed backdrop (outside the card) closes read-only screens. */
+function closeOnBackdrop(screen: HTMLElement, close: () => void): void {
+  onClick(screen, (e) => {
+    if (e.target === screen) close();
+  });
+}
+
 // ── how to play ──────────────────────────────────────────────────────────────
 
 const CONTROL_ROWS: readonly { tokens: GlyphToken[]; text: string; icon: IconId }[] = [
@@ -72,6 +79,7 @@ export class HowToScreen implements Screen {
       el('div', { class: 'bhd-cardfoot' }, [this.hint, this.back_]),
     ]);
     this.el.append(card);
+    closeOnBackdrop(this.el, () => this.ctx.close());
     this.focus = ctx.createFocus();
     const back: FocusItem = { el: this.back_, activate: () => this.ctx.close(), sound: 'back' };
     this.focus.setRows([[back]], this.back_);
@@ -174,18 +182,21 @@ export class CreditsScreen implements Screen {
     this.back_ = button('bhd-btn--primary', 'BACK', uiIcon('back'));
     const card = el('div', { class: 'bhd-panel bhd-credits__card bhd-enter' }, [
       cardTitle('CREDITS', iconSvg('heart')),
-      logoEl('sm'),
-      el('p', { class: 'bhd-credits__love' }, [el('span', { class: 'bhd-credits__heart', html: iconSvg('heart') }), el('span', { text: 'Made with love for Addy, Ellie, Heidi, Ashley & Chris' })]),
-      this.faces,
-      el('div', { class: 'bhd-credits__tech' }, [
-        el('span', { class: 'bhd-tag', text: 'HOMEMADE' }),
-        el('span', { text: 'Procedural 3D, synthesized audio, zero downloaded assets.' }),
+      el('div', { class: 'bhd-credits__body bhd-scroll' }, [
+        logoEl('sm'),
+        el('p', { class: 'bhd-credits__love' }, [el('span', { class: 'bhd-credits__heart', html: iconSvg('heart') }), el('span', { text: 'Made with love for Addy, Ellie, Heidi, Ashley & Chris' })]),
+        this.faces,
+        el('div', { class: 'bhd-credits__tech' }, [
+          el('span', { class: 'bhd-tag', text: 'HOMEMADE' }),
+          el('span', { text: 'Procedural 3D, synthesized audio, zero downloaded assets.' }),
+        ]),
+        el('p', { class: 'bhd-credits__small', text: 'Every model built in code · every sound made on the fly · Three.js + Web Audio' }),
+        el('p', { class: 'bhd-credits__small', text: '© Athlete Domains LLC' }),
       ]),
-      el('p', { class: 'bhd-credits__small', text: 'Every model built in code · every sound made on the fly · Three.js + Web Audio' }),
-      el('p', { class: 'bhd-credits__small', text: '© Athlete Domains LLC' }),
       el('div', { class: 'bhd-cardfoot bhd-cardfoot--center' }, [this.back_]),
     ]);
     this.el.append(card);
+    closeOnBackdrop(this.el, () => this.ctx.close());
     this.focus = ctx.createFocus();
     this.focus.setRows([[{ el: this.back_, activate: () => this.ctx.close(), sound: 'back' }]], this.back_);
   }
@@ -193,6 +204,17 @@ export class CreditsScreen implements Screen {
   enter(): void {
     this.focus.focus(this.back_);
     this.refresh();
+  }
+
+  action(a: MenuAction): boolean {
+    if (a === 'up' || a === 'down') {
+      const body = this.el.querySelector('.bhd-credits__body') as HTMLElement;
+      const dy = a === 'up' ? -SCROLL_STEP : SCROLL_STEP;
+      if (typeof body.scrollBy === 'function') body.scrollBy({ top: dy, behavior: 'smooth' });
+      else body.scrollTop += dy;
+      return true;
+    }
+    return false;
   }
 
   refresh(): void {

@@ -6,10 +6,12 @@ import type { GirlId } from '../../family/types';
 import type { BrushKind } from '../../hair/types';
 import type { GirlHairPlan, HairCondition } from '../../plan/types';
 import { CONDITION_INFO, initialTangle } from './conditions';
-import { BRUSH_SPECS, SELF_RATE, applyStroke, selfBrush, smoothness, type BrushSpec, type StrokeResult } from './rules';
+import { BRUSH_SPECS, SELF_RATE, applyStroke, isPerfect, selfBrush, smoothness, type BrushSpec, type StrokeResult } from './rules';
 
 /** A girl only says "I'M DONE!" by herself after this much brushing time (s). */
 export const DECLARE_GRACE = 12;
+/** Self-brushing speed after she has declared herself done (she keeps fussing, a bit slower). */
+export const DECLARED_SELF = 0.6;
 
 export interface GirlSession {
   readonly id: GirlId;
@@ -21,9 +23,12 @@ export interface GirlSession {
   /** Mean tangle at the start (bedhead easing reference). */
   readonly startMean: number;
   brush: BrushKind;
+  /** She says she's done ("I'M DONE!" — by herself while unattended, or via the player). */
   declared: boolean;
   /** Declared by the player (DONE) rather than by herself. */
   declaredByPlayer: boolean;
+  /** The player confirmed she's done (DONE) or she reached 100 %: Mom may inspect her. */
+  confirmed: boolean;
   perfect: boolean;
   blackSeconds: number;
   /** Cell she is brushing herself (−1 = none). */
@@ -38,7 +43,9 @@ export interface PassResult {
 }
 
 export interface TickEvents {
+  /** Unattended girls who just said "I'M DONE!" by themselves. */
   declared: GirlId[];
+  /** Girls who just reached 100 % (declared + confirmed automatically). */
   perfect: GirlId[];
 }
 
@@ -84,6 +91,7 @@ export class HairSession {
         brush: id === o.holder ? 'black' : o.backup[id],
         declared: false,
         declaredByPlayer: false,
+        confirmed: false,
         perfect: false,
         blackSeconds: 0,
         working: -1,
@@ -109,6 +117,16 @@ export class HairSession {
 
   get allDeclared(): boolean {
     return this.girls.every((id) => this.g[id].declared);
+  }
+
+  /** Everyone is ready for Mom (the player pressed DONE for each, or they reached 100 %). */
+  get allConfirmed(): boolean {
+    return this.girls.every((id) => this.g[id].confirmed);
+  }
+
+  /** "100 %": every section brushed out. */
+  isPerfect(id: GirlId): boolean {
+    return isPerfect(this.g[id].field);
   }
 
   setFocus(id: GirlId): boolean {
@@ -143,18 +161,33 @@ export class HairSession {
     return applyStroke(s.field, this.cols, this.rows, u0, v0, u1, v1, dt, strokeStartV, BRUSH_SPECS[s.brush], s.rateMul);
   }
 
-  /** Mark a girl done (she says "I'M DONE!" / the player pressed DONE). False if she already was. */
+  /** The player says she's done (DONE): declared + confirmed. False if she already was confirmed. */
   declare(id: GirlId, byPlayer = false): boolean {
     const s = this.g[id];
+    if (byPlayer) {
+      if (s.confirmed) return false;
+      s.confirmed = true;
+      s.declaredByPlayer = true;
+      s.declared = true;
+      return true;
+    }
     if (s.declared) return false;
     s.declared = true;
-    s.declaredByPlayer = byPlayer;
     return true;
   }
 
+  /** Confirm every girl (the player chose to call Mom). */
+  confirmAll(): void {
+    for (const id of this.girls) {
+      this.g[id].declared = true;
+      this.g[id].confirmed = true;
+    }
+  }
+
   /**
-   * Advance the brushing phase: unfocused, not-yet-done girls brush themselves (faster with the black brush),
-   * the holder's black-brush time accrues, and girls declare "I'M DONE!" when they reach their threshold.
+   * Advance the brushing phase: every girl who isn't being brushed by the player brushes herself (faster with the
+   * black brush, a bit slower once she thinks she's done); the holder's black-brush time accrues; UNATTENDED girls
+   * say "I'M DONE!" at their own threshold (the focused girl never does — the player decides, or 100 % does).
    */
   tick(dt: number, focusActive = true): TickEvents {
     const ev: TickEvents = { declared: [], perfect: [] };
@@ -163,17 +196,23 @@ export class HairSession {
     this.g[this.holder].blackSeconds += dt;
     for (const id of this.girls) {
       const s = this.g[id];
-      if (!s.declared && (id !== this.focus || !focusActive)) {
-        s.working = selfBrush(s.field, this.cols, this.rows, dt, SELF_RATE * BRUSH_SPECS[s.brush].self * s.rateMul);
+      const attended = id === this.focus && focusActive;
+      if (!attended && !s.perfect) {
+        const rate = SELF_RATE * BRUSH_SPECS[s.brush].self * s.rateMul * (s.declared ? DECLARED_SELF : 1);
+        s.working = selfBrush(s.field, this.cols, this.rows, dt, rate);
       } else s.working = -1;
-      const sm = smoothness(s.field);
-      if (!s.declared && sm >= s.doneAt && this.elapsed >= DECLARE_GRACE) {
+      if (!s.perfect && isPerfect(s.field)) {
+        s.perfect = true;
+        s.field.fill(0);
+        const was = s.confirmed;
+        s.declared = true;
+        s.confirmed = true;
+        if (!was || s.perfectNeeded) ev.perfect.push(id);
+        continue;
+      }
+      if (!attended && !s.declared && this.elapsed >= DECLARE_GRACE && smoothness(s.field) >= s.doneAt) {
         s.declared = true;
         ev.declared.push(id);
-      }
-      if (s.perfectNeeded && !s.perfect && sm >= 0.999) {
-        s.perfect = true;
-        ev.perfect.push(id);
       }
     }
     return ev;

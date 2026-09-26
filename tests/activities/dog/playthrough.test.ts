@@ -4,11 +4,18 @@ import { describe, expect, it } from 'vitest';
 import { DogOut } from '../../../src/activities/dog/activity';
 import type { Attention } from '../../../src/activities/dog/logic';
 import { isIndoors } from '../../../src/activities/dog/roam';
+import { generatePlan } from '../../../src/plan';
 import { ACTS, type DogQuirk } from '../../../src/plan/types';
 import { createHarness, press, release, steer, type Harness } from './harness';
 
-/** Seeds per quirk (generatePlan). */
-const SEED: Record<DogQuirk, number> = { stubborn: 1, sniffAll: 7, stare: 4, zoomies: 9, leaf: 19 };
+
+/** First seed whose plan has each quirk (searched, so plan-generator changes never break these tests). */
+const SEED = Object.fromEntries(
+  (['stubborn', 'sniffAll', 'stare', 'zoomies', 'leaf'] as DogQuirk[]).map((q) => {
+    for (let s = 1; s < 500; s++) if (generatePlan(s).dogQuirk === q) return [q, s];
+    throw new Error('no seed with quirk ' + q);
+  }),
+) as Record<DogQuirk, number>;
 
 interface DogView {
   attention: Attention;

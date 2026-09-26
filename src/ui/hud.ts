@@ -48,6 +48,8 @@ export class Hud {
   readonly el: HTMLElement;
   /** Top-left column (clock, tasks, objective) — measured for layout. */
   readonly leftColumn: HTMLElement;
+  /** Top-right column (pause button, meters) — measured for layout. */
+  readonly rightColumn: HTMLElement;
   private readonly clock: HTMLElement;
   private readonly hh: SVGGElement;
   private readonly mh: SVGGElement;
@@ -57,6 +59,12 @@ export class Hud {
   private readonly tasksEl: HTMLElement;
   private readonly taskList: HTMLElement;
   private readonly taskCount: HTMLElement;
+  private readonly chip: HTMLButtonElement;
+  private readonly chipIco: HTMLElement;
+  private readonly chipCount: HTMLElement;
+  private chipIcon: IconId | '' = '';
+  private tasksOpen = false;
+  private openLeft = 0;
   private readonly objEl: HTMLElement;
   private readonly objText: HTMLElement;
   private readonly metersEl: HTMLElement;
@@ -93,11 +101,22 @@ export class Hud {
     this.metersEl = el('div', { class: 'bhd-meters', attrs: { hidden: '' } });
     this.pauseBtn = el('button', { class: 'bhd-iconbtn bhd-pausebtn', html: uiIcon('pause'), attrs: { type: 'button', tabindex: '-1', 'aria-label': 'Pause', hidden: '', 'data-bhd-tap': '' } });
     onTap(this.pauseBtn, () => onPause());
-    this.leftColumn = el('div', { class: 'bhd-hud__tl' }, [this.clock, this.tasksEl, this.objEl]);
-    this.el = el('div', { class: 'bhd-hud', attrs: { hidden: '' } }, [
-      this.leftColumn,
-      el('div', { class: 'bhd-hud__tr' }, [this.pauseBtn, this.metersEl]),
+    // Phones (short or narrow screens): the list collapses into a chip that opens on tap (CSS decides when).
+    this.chipIco = el('span', { class: 'bhd-taskchip__ico' });
+    this.chipCount = el('span', { class: 'bhd-taskchip__n' });
+    this.chip = el('button', { class: 'bhd-taskchip', attrs: { type: 'button', tabindex: '-1', hidden: '', 'aria-expanded': 'false', 'data-bhd-tap': '' } }, [
+      this.chipIco,
+      el('span', { class: 'bhd-taskchip__t', text: 'TO-DO' }),
+      this.chipCount,
+      el('span', { class: 'bhd-taskchip__caret', html: uiIcon('next') }),
     ]);
+    onTap(this.chip, () => this.toggleTasks());
+    onTap(this.tasksEl, () => {
+      if (this.tasksOpen) this.toggleTasks(false);
+    });
+    this.leftColumn = el('div', { class: 'bhd-hud__tl' }, [this.clock, this.chip, this.tasksEl, this.objEl]);
+    this.rightColumn = el('div', { class: 'bhd-hud__tr' }, [this.pauseBtn, this.metersEl]);
+    this.el = el('div', { class: 'bhd-hud', attrs: { hidden: '' } }, [this.leftColumn, this.rightColumn]);
   }
 
   get visible(): boolean {
@@ -153,6 +172,26 @@ export class Hud {
     }
   }
 
+  /** Is the phone TO-DO dropdown open (tests)? */
+  get tasksExpanded(): boolean {
+    return this.tasksOpen;
+  }
+
+  toggleTasks(open = !this.tasksOpen): void {
+    if (open === this.tasksOpen) return;
+    this.tasksOpen = open;
+    this.openLeft = open ? 6 : 0;
+    setClass(this.el, 'is-tasks-open', open);
+    this.chip.setAttribute('aria-expanded', String(open));
+  }
+
+  /** Per-frame: an opened dropdown folds itself away after a few seconds. */
+  tick(dt: number): void {
+    if (!this.tasksOpen) return;
+    this.openLeft -= dt;
+    if (this.openLeft <= 0) this.toggleTasks(false);
+  }
+
   private setTasks(tasks: readonly TaskItem[] | undefined): void {
     const list = tasks ?? [];
     let key = '';
@@ -186,7 +225,10 @@ export class Hud {
         const prev = n.state;
         n.state = t.state;
         setData(n.li, 'state', t.state);
-        if (t.state === 'done' && prev !== '' && prev !== 'done') replay(n.li, 'is-justdone');
+        if (t.state === 'done' && prev !== '' && prev !== 'done') {
+          replay(n.li, 'is-justdone');
+          replay(this.chip, 'is-bump');
+        }
         if (t.state === 'active' && prev !== '') replay(n.li, 'is-justactive');
       }
       const stars = t.state === 'done' ? Math.max(0, Math.min(3, Math.floor(t.stars ?? 0))) : 0;
@@ -200,7 +242,17 @@ export class Hud {
         }
       }
     }
-    if (list.length > 0) setText(this.taskCount, `${done}/${list.length}`);
+    if (list.length > 0) {
+      setText(this.taskCount, `${done}/${list.length}`);
+      setText(this.chipCount, `${done}/${list.length}`);
+    }
+    setHidden(this.chip, list.length === 0);
+    const active = list.find((t) => t.state === 'active') ?? list.find((t) => t.state === 'todo');
+    const icon: IconId | '' = active ? active.icon : list.length > 0 ? 'check' : '';
+    if (icon !== this.chipIcon) {
+      this.chipIcon = icon;
+      this.chipIco.innerHTML = icon ? iconSvg(icon) : '';
+    }
   }
 
   private makeTask(): TaskNode {

@@ -8,6 +8,7 @@
 import { createUI } from '../src/ui';
 import type { UiController } from '../src/ui/controller';
 import { ICON_IDS, iconSvg } from '../src/ui/icons';
+import { faceSvg } from '../src/ui/faces';
 import { CONTROL_ICONS, controlIconSvg } from '../src/input/icons';
 import { TouchOverlay } from '../src/input/touch';
 import type { ControlScheme, InputDevice, PadStyle } from '../src/input/types';
@@ -143,14 +144,16 @@ const BANNERS: Record<BannerStyle, [string, string]> = {
 };
 
 const portraits: PortraitRow = {
+  compact: params.get('compact') === '1',
   items: [
-    { id: 'addy', name: 'ADDY', color: 'var(--bhd-addy)', progress: 0.82, status: 'I’M DONE!', badge: null, mood: 'proud' },
-    { id: 'ellie', name: 'ELLIE', color: 'var(--bhd-ellie)', progress: 0.46, status: 'Big bedhead', badge: 'blackBrush', focused: true, mood: 'happy' },
-    { id: 'heidi', name: 'HEIDI', color: 'var(--bhd-heidi)', progress: 0.2, status: 'Snag! eep!', badge: null, mood: 'eek' },
+    { id: 'addy', name: 'ADDY', color: 'var(--bhd-addy)', progress: 0.97, goal: 0.95, status: 'I’M DONE!', badge: null, mood: 'proud' },
+    { id: 'ellie', name: 'ELLIE', color: 'var(--bhd-ellie)', progress: 0.46, goal: 0.95, status: 'Big bedhead', badge: 'blackBrush', focused: true, mood: 'happy' },
+    { id: 'heidi', name: 'HEIDI', color: 'var(--bhd-heidi)', progress: 0.2, goal: 0.95, status: 'Oops!', badge: null, mood: params.get('mood') === 'dramatic' ? 'dramatic' : 'eek' },
   ],
   chips: [
     { id: 'pass', label: 'PASS THE BLACK BRUSH', slot: 'secondary', icon: 'blackBrush' },
-    { id: 'done', label: 'DONE', slot: 'alt', icon: 'check' },
+    { id: 'done', label: 'SHE’S DONE', slot: 'alt', icon: 'check' },
+    ...(params.get('chips') === '3' ? [{ id: 'mom', label: 'CALL MOM', icon: 'eye' as const }] : []),
   ],
 };
 
@@ -280,14 +283,16 @@ switch (what) {
     ui.setHud({ ...hud, tasks: hud.tasks?.slice(0, 3) });
     const style = (arg || 'secured') as BannerStyle;
     const [t, s] = BANNERS[style] ?? BANNERS.info;
-    ui.banner(t, style, { sub: s, seconds: 60 });
+    const pos = params.get('pos');
+    ui.banner(t, style, { sub: s, seconds: 60, pos: pos === 'top' || pos === 'bottom' ? pos : 'center' });
     ready();
     break;
   }
   case 'boss':
     ui.showScreen('none', data);
     void ui.bossIntro('MOM', 'THE HAIR INSPECTOR');
-    {
+    if (params.get('pause')) later(3200, ready);
+    else {
       // Freeze once the heart bar is full (dt-driven; software GL runs at a low frame rate).
       const poll = setInterval(() => {
         if (ui.bossView.heartsLit >= 10) {
@@ -330,7 +335,17 @@ switch (what) {
     break;
   case 'portraits':
     ui.showScreen('none', data);
-    ui.setHud({ clock: 6 * 60 + 52, actLabel: 'ACT III · HAIR TIME', tasks: [{ id: 'hair', label: 'Brush three heads', icon: 'brush', state: 'active' }], objective: 'Brush from the ends up!', pauseButton: true });
+    if (portraits.compact) fake.style.background = 'radial-gradient(ellipse 30% 40% at 50% 38%, #f9d0ae 0 60%, #6b3d24 61% 100%), linear-gradient(#d2e6f2, #cfe6f2)';
+    ui.setHud({
+      clock: 6 * 60 + 52,
+      actLabel: 'ACT III · HAIR TIME',
+      tasks: [
+        { id: 'hair', label: 'Brush three heads', icon: 'brush', state: 'active' },
+        { id: 'mom', label: 'Mom’s hair check', icon: 'eye', state: 'todo' },
+      ],
+      objective: 'Brush from the ends up!',
+      pauseButton: true,
+    });
     ui.portraits(portraits);
     ui.instruction('Start low — work the ends first!', 'Gentle strokes. Slow and smooth.');
     ui.prompt({ text: 'Hold & drag to brush', slot: 'pointer' });
@@ -394,6 +409,17 @@ switch (what) {
     later(300, ready);
     break;
   }
+  case 'faces': {
+    const grid = document.createElement('div');
+    grid.className = 'dev-grid';
+    grid.style.gridTemplateColumns = 'repeat(6, 1fr)';
+    for (const who of ['addy', 'ellie', 'heidi', 'ashley', 'chris'] as const)
+      for (const mood of ['happy', 'neutral', 'eek', 'proud', 'sleepy', 'dramatic'] as const)
+        grid.insertAdjacentHTML('beforeend', `<div class="dev-cell"><div style="width:96px;height:96px">${faceSvg({ who, look: family.looks.members[who], mood })}</div><span>${who} · ${mood}</span></div>`);
+    app.appendChild(grid);
+    ready();
+    break;
+  }
   case 'icons': {
     const grid = document.createElement('div');
     grid.className = 'dev-grid';
@@ -416,3 +442,6 @@ switch (what) {
     ui.showScreen('title', data);
     ready();
 }
+
+// &pause=N: open the pause menu N ms after the view is up (stacking / freeze checks).
+if (params.get('pause')) later(Number(params.get('pause')) || 1200, () => ui.showScreen('pause', data));

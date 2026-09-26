@@ -494,6 +494,8 @@ export class Jogger extends DriveEventLogic {
   private offroad = false;
   static readonly SPEED = 3.0;
   static readonly RUN = 85;
+  /** How far she jogs before turning off (the sim shortens it so she's off the road before the next event). */
+  run: number = Jogger.RUN;
 
   constructor(index: number, s: number) {
     super(index, s);
@@ -525,7 +527,7 @@ export class Jogger extends DriveEventLogic {
     this.t += dt;
     j.vs = Jogger.SPEED;
     j.s += j.vs * dt;
-    if (!this.offroad && j.s >= this.s + Jogger.RUN) {
+    if (!this.offroad && j.s >= this.s + this.run) {
       this.offroad = true;
       if (this.result === 'pending') {
         this.result = this.bumped ? 'missed' : 'ok';
@@ -560,6 +562,8 @@ export class GarbageTruck extends DriveEventLogic {
   arm = 0;
   static readonly SPEED = 2.4;
   static readonly RUN = 70;
+  /** How far it drives before pulling over (the sim shortens it so it's parked before the next event). */
+  run: number = GarbageTruck.RUN;
 
   constructor(index: number, s: number) {
     super(index, s);
@@ -591,7 +595,7 @@ export class GarbageTruck extends DriveEventLogic {
     this.modeT += dt;
     if (this.mode === 'drive') {
       tr.vs = GarbageTruck.SPEED;
-      if (tr.s >= this.s + GarbageTruck.RUN) {
+      if (tr.s >= this.s + this.run) {
         this.mode = 'pull';
         this.modeT = 0;
         sim.cue('truckPullOver', this.index);

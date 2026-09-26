@@ -37,7 +37,11 @@ export const SPEED_T = 0.3;
 /** At or below this a section counts as smooth (sparkle + chime). */
 export const SMOOTH_T = 0.06;
 /** Detangle per unit v travelled through a section (× brush rate × coverage). */
-export const DETANGLE_RATE = 2.4;
+export const DETANGLE_RATE = 3.2;
+/** A well-covered section whose leftover drops below this is brushed out completely (100 % is reachable). */
+export const SNAP_T = 0.045;
+/** Every section at or below this = "100 %" (picture day, the focused girl's own "I'M DONE!"). */
+export const PERFECT_T = 0.02;
 /** Share of the normal rate when the section below is still knotted. */
 export const GATED = 0.25;
 /** Self-brushing (unfocused girls): tangle removed per second (× the brush's `self`). */
@@ -113,8 +117,12 @@ export function applyStroke(
     if (dvIn <= 0) return;
     const below = row < rows - 1 ? field[(row + 1) * cols + col]! : 0;
     const gate = below <= CLEAR_T ? 1 : GATED;
-    const amount = DETANGLE_RATE * brush.rate * rateMul * coverage * dvIn * gate;
-    const nt = Math.max(0, t - amount);
+    // Flat brush: every lock under the paddle is combed fully; only the lock at its edge partially.
+    const reach = brush.width / 2 + 0.5 / cols;
+    const flat = coverageFlat((1 - coverage) * reach, brush.width / 2, cols);
+    const amount = DETANGLE_RATE * brush.rate * rateMul * flat * dvIn * gate;
+    let nt = Math.max(0, t - amount);
+    if (nt < SNAP_T && flat >= 0.9 && gate === 1) nt = 0;
     if (Math.floor(t * 4) > Math.floor(nt * 4 + 1e-9)) res.releases++;
     if (t > SMOOTH_T && nt <= SMOOTH_T) res.cleared.push(i);
     res.removed += t - nt;
@@ -125,6 +133,33 @@ export function applyStroke(
     res.endV = Math.max(v0, res.snag.row / rows);
   }
   return res;
+}
+
+/** Brush coverage of a lock at distance `d` (u) from the brush centre: 1 under the paddle, fading over half a column. */
+export function coverageFlat(d: number, halfWidth: number, cols: number): number {
+  const ad = Math.abs(d);
+  if (ad <= halfWidth) return 1;
+  const fade = 0.5 / Math.max(1, cols);
+  return Math.max(0, 1 - (ad - halfWidth) / fade);
+}
+
+/** "100 %": every section brushed out. */
+export function isPerfect(field: ArrayLike<number>): boolean {
+  for (let i = 0; i < field.length; i++) if (field[i]! > PERFECT_T) return false;
+  return true;
+}
+
+/** Percentage to show (100 only when truly perfect, so "100 %" always means done-done). */
+export function displayPercent(field: ArrayLike<number>): number {
+  if (isPerfect(field)) return 100;
+  // Tiny epsilon: Float32 fields (0.3 → 0.30000001) must not show 69 % for 70 %.
+  return Math.min(99, Math.floor(smoothness(field) * 100 + 1e-4));
+}
+
+/** Lowest section row that still has a real knot (the "start here" guide), or −1. */
+export function guideRow(field: ArrayLike<number>, cols: number, rows: number): number {
+  for (let r = rows - 1; r >= 0; r--) for (let c = 0; c < cols; c++) if (field[r * cols + c]! >= KNOT_T) return r;
+  return -1;
 }
 
 /**
@@ -165,7 +200,8 @@ export function smoothness(field: ArrayLike<number>): number {
 
 /** Mom's verdict for one girl. */
 export function momVerdict(smooth: number): 'approved' | 'finish' {
-  return smooth >= APPROVE_T - 1e-9 ? 'approved' : 'finish';
+  // Same epsilon as displayPercent: whenever the portrait shows "95 %", Mom approves.
+  return smooth * 100 + 1e-4 >= APPROVE_T * 100 ? 'approved' : 'finish';
 }
 
 /** Stroke speed feedback for the brush trail colour. */

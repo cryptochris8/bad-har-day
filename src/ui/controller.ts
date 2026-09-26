@@ -116,6 +116,8 @@ export class UiController implements UiManager {
   private touchPoll = 0;
   private layoutT = 0;
   private hudBottom = -99;
+  private hudRight = -99;
+  private hudRightW = -99;
   private portraitsBottom = -99;
   private lastGlyphKey = '';
   private observer: MutationObserver | null = null;
@@ -150,6 +152,7 @@ export class UiController implements UiManager {
       },
       (slot) => this.glyph(slot),
       () => glyphKey(this.glyphCtx()),
+      (slot) => this.touchInfo(slot) !== null,
     );
     this.choiceView = new ChoiceView(this.makeFocus('spatial'), (k) => this.sound(k));
     this.actCardView = new ActCardView();
@@ -294,7 +297,7 @@ export class UiController implements UiManager {
     return this.actCardView.show(card);
   }
 
-  banner(text: string, style: BannerStyle = 'info', opts?: { sub?: string; seconds?: number; icon?: IconId }): void {
+  banner(text: string, style: BannerStyle = 'info', opts?: { sub?: string; seconds?: number; icon?: IconId; pos?: 'center' | 'top' | 'bottom' }): void {
     if (this.disposed) return;
     this.banners.show(text, style, opts);
   }
@@ -360,6 +363,8 @@ export class UiController implements UiManager {
     this.time += d;
     this.screens[this.current].update?.(d);
     const paused = this.current === 'pause' || this.returnTo_ === 'pause';
+    this.actCardView.setFrozen(paused);
+    this.bossView.setFrozen(paused);
     if (!paused) {
       this.actCardView.update(d);
       this.bossView.update(d);
@@ -368,6 +373,7 @@ export class UiController implements UiManager {
     }
     this.promptView.update(this.projector);
     this.toasts.update(d);
+    this.hud.tick(d);
     this.layoutT -= d;
     if (this.layoutT <= 0) {
       this.layoutT = 0.25;
@@ -402,6 +408,7 @@ export class UiController implements UiManager {
   get debug(): {
     banner: string | null;
     bannerStyle: BannerStyle | null;
+    bannerPos: 'center' | 'top' | 'bottom' | null;
     toasts: string[];
     bubbles: number;
     instruction: string | null;
@@ -415,6 +422,7 @@ export class UiController implements UiManager {
     return {
       banner: this.banners.showing,
       bannerStyle: this.banners.showingStyle,
+      bannerPos: this.banners.showingPos,
       toasts: this.toasts.texts,
       bubbles: this.bubbles.active,
       instruction: this.instr.text_,
@@ -455,6 +463,9 @@ export class UiController implements UiManager {
 
   private activate(id: ScreenId, from: ScreenId): void {
     this.current = id;
+    const paused = id === 'pause' || (SUB_SCREENS.has(id) && this.returnTo_ === 'pause');
+    this.actCardView?.setFrozen(paused);
+    this.bossView?.setFrozen(paused);
     this.layer.dataset.screen = id;
     const inGame = GAME_SCREENS.has(id) || (SUB_SCREENS.has(id) && this.returnTo_ === 'pause');
     this.layer.dataset.mode = inGame ? 'game' : 'menu';
@@ -641,11 +652,24 @@ export class UiController implements UiManager {
    */
   private measureLayout(): void {
     if (this.layer.dataset.mode !== 'game') return;
-    const top = this.layer.getBoundingClientRect().top;
-    const hb = this.hud.visible ? Math.round(this.hud.leftColumn.getBoundingClientRect().bottom - top) : 0;
+    const box = this.layer.getBoundingClientRect();
+    const top = box.top;
+    const l = this.hud.visible ? this.hud.leftColumn.getBoundingClientRect() : null;
+    const hb = l ? Math.round(l.bottom - top) : 0;
     if (Math.abs(hb - this.hudBottom) >= 2) {
       this.hudBottom = hb;
       this.layer.style.setProperty('--bhd-hud-bottom', `${Math.max(0, hb)}px`);
+    }
+    const hr = l ? Math.round(l.right - box.left) : 0;
+    if (Math.abs(hr - this.hudRight) >= 2) {
+      this.hudRight = hr;
+      this.layer.style.setProperty('--bhd-hud-right', `${Math.max(0, hr)}px`);
+    }
+    const r = this.hud.visible ? this.hud.rightColumn.getBoundingClientRect() : null;
+    const trw = r && r.width > 0 ? Math.round(box.right - r.left) : 0;
+    if (Math.abs(trw - this.hudRightW) >= 2) {
+      this.hudRightW = trw;
+      this.layer.style.setProperty('--bhd-hud-trw', `${Math.max(0, trw)}px`);
     }
     const pb = this.portraitView.visible ? Math.round(this.portraitView.el.getBoundingClientRect().bottom - top) : 0;
     if (Math.abs(pb - this.portraitsBottom) >= 2) {

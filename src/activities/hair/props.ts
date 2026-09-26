@@ -30,39 +30,76 @@ export const COUNTER_LAYOUT: readonly { kind: BrushKind; dx: number; yaw: number
   { kind: 'teal', dx: 0.27, yaw: -0.2 },
 ];
 
-/** Per-stool brushing camera: which side it comes from and how far out (outer girls use their free side). */
+/** Per-stool brushing camera, RELATIVE TO HER SEATED HEAD (solved offline against the vanity mirror, the
+ *  neighbours and the UI band, with the measured seated rig: head ≈ stool + (0, 0.67, 0.2), hair tips ≈ 0.26 m
+ *  further back). */
 export interface ShotSide {
+  /** −1 = camera to her left (−x), +1 = to her right. */
   side: -1 | 1;
+  /** Lateral offset, height above her head centre, distance behind her head (m). */
   ax: number;
   up: number;
   back: number;
+  /** Look-at point: lateral offset (× side), height relative to her head centre (0.35 m in front of her head). */
+  tx: number;
+  ty: number;
+  fov: number;
 }
 export const SHOT_SIDES: readonly ShotSide[] = [
-  { side: -1, ax: 0.68, up: 0.26, back: 0.92 }, // stool1 (left end): from her left
-  { side: 1, ax: 0.42, up: 0.3, back: 1.02 }, // stool2 (middle): small right offset, the gap before her sister
-  { side: 1, ax: 0.68, up: 0.26, back: 0.92 }, // stool3 (right end): from her right
+  // stool1 (left end): from her free left side.
+  { side: -1, ax: 0.44, up: 0.12, back: 1.08, tx: -0.14, ty: -0.17, fov: 50 },
+  // stool2 (middle): from her right, looking a little left past her.
+  { side: 1, ax: 0.44, up: 0.14, back: 1.1, tx: -0.14, ty: -0.17, fov: 50 },
+  // stool3 (right end): from her free right side.
+  { side: 1, ax: 0.52, up: 0.12, back: 1.0, tx: 0.03, ty: -0.17, fov: 52 },
 ];
 
 /**
- * Brushing close-up for a girl seated at stool (sx, sz) (head centre height `headY`) facing −Z: a 3/4 back view
- * a little above her head, looking down at her hair. The lateral offset is chosen so her face shows in the
- * mirror beside her own head (not behind it, not behind a sister, not under the portrait row); solved offline
- * for the vanity layout. `minX`/`maxX` keep the camera inside the room.
+ * Distance multiplier for narrow screens: pull the camera back only as far as needed for her whole head of hair
+ * (≈ 0.66 m across incl. a margin, seen from ≈ 1.1 m) to fit the screen width. `tanHalfV` = tan(effective vertical
+ * FOV / 2) — the camera rig already widens the FOV on portrait screens, so this is often 1.
  */
-export function brushingShot(sx: number, sz: number, headY: number, s: ShotSide, minX: number, maxX: number, out: CameraGoal): CameraGoal {
-  const cx = Math.max(minX, Math.min(maxX, sx + s.side * s.ax));
-  const lean = (cx - sx) * 0.14;
-  out.position = { x: cx, y: headY + s.up, z: sz + s.back };
-  out.target = { x: sx + lean, y: headY - 0.33, z: sz - 0.25 };
-  out.fov = 50;
+export function fitScale(aspect: number, tanHalfV: number): number {
+  if (!(aspect > 0) || !(tanHalfV > 0)) return 1;
+  const tanH = tanHalfV * aspect;
+  return Math.max(1, Math.min(2.2, 0.33 / (tanH * 1.1)));
+}
+
+/**
+ * Brushing close-up for a girl whose seated head centre is (hx, hy, hz), facing −Z. Her face shows in the
+ * mirror in the middle band of the frame; the top ~22 % stays free for the portrait row. `scale` > 1 pulls the
+ * camera back (portrait phones). `minX`/`maxX` keep the camera inside the room.
+ */
+export function brushingShot(hx: number, hy: number, hz: number, s: ShotSide, minX: number, maxX: number, out: CameraGoal, scale = 1): CameraGoal {
+  const cx = Math.max(minX, Math.min(maxX, hx + s.side * s.ax));
+  const tgt = { x: hx + s.side * s.tx, y: hy + s.ty, z: hz - 0.35 };
+  const k = Math.max(1, scale);
+  out.position = { x: tgt.x + (cx - tgt.x) * k, y: tgt.y + (hy + s.up - tgt.y) * k, z: tgt.z + (hz + s.back - tgt.z) * k };
+  out.target = tgt;
+  out.fov = s.fov;
   return out;
 }
 
-/** Mom's inspection: from the mirror side, looking back at the girl's face with Mom leaning in behind her. */
-export function inspectShot(sx: number, sz: number, headY: number, out: CameraGoal): CameraGoal {
-  out.position = { x: sx + 0.18, y: headY + 0.34, z: sz - 0.92 };
-  out.target = { x: sx - 0.02, y: headY + 0.12, z: sz + 0.35 };
-  out.fov = 52;
+/**
+ * Mom's inspection from behind (the knots are on the back of the hair): the girl's brushing view pulled back a
+ * little and raised, so Mom — leaning in on the far side — and the magnifying glass are in frame too.
+ */
+export function inspectBackShot(hx: number, hy: number, hz: number, s: ShotSide, minX: number, maxX: number, out: CameraGoal, scale = 1): CameraGoal {
+  brushingShot(hx, hy, hz, s, minX, maxX, out, scale * 1.15);
+  out.position = { x: out.position.x, y: out.position.y + 0.2, z: out.position.z };
+  out.target = { x: hx - s.side * 0.12, y: hy - 0.1, z: hz - 0.1 };
+  out.fov = 56;
+  return out;
+}
+
+/**
+ * Mom's verdict, face to face: from the mirror side, a little to her side and higher, far enough back that Mom
+ * (leaning in beside her) and the girl are both in frame — and low enough in the frame to stay clear of banners.
+ */
+export function inspectShot(sx: number, sz: number, headY: number, out: CameraGoal, side: -1 | 1 = 1): CameraGoal {
+  out.position = { x: sx + 0.35 * side, y: headY + 0.42, z: sz - 1.02 };
+  out.target = { x: sx + 0.08 * side, y: headY + 0.02, z: sz + 0.3 };
+  out.fov = 56;
   return out;
 }
 

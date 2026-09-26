@@ -14,7 +14,11 @@ export interface BannerSpec {
   style: BannerStyle;
   seconds: number;
   icon: IconId | null;
+  /** 'center' (default) · 'top' · 'bottom' — keeps a banner off a close-up's faces. */
+  pos: BannerPos;
 }
+
+export type BannerPos = 'center' | 'top' | 'bottom';
 
 export const BANNER_SECONDS: Readonly<Record<BannerStyle, number>> = {
   secured: 2.3,
@@ -81,11 +85,15 @@ export class Banners {
     return this.current?.style ?? null;
   }
 
+  get showingPos(): BannerPos | null {
+    return this.current?.pos ?? null;
+  }
+
   get pending(): number {
     return this.queue.length;
   }
 
-  show(text: string, style: BannerStyle = 'info', opts: { sub?: string; seconds?: number; icon?: IconId } = {}): void {
+  show(text: string, style: BannerStyle = 'info', opts: { sub?: string; seconds?: number; icon?: IconId; pos?: BannerPos } = {}): void {
     const secs = opts.seconds;
     const spec: BannerSpec = {
       text: String(text),
@@ -93,6 +101,7 @@ export class Banners {
       style,
       seconds: Math.min(8, Math.max(0.8, secs !== undefined && Number.isFinite(secs) ? secs : BANNER_SECONDS[style] ?? 2)),
       icon: opts.icon ?? null,
+      pos: opts.pos === 'top' || opts.pos === 'bottom' ? opts.pos : 'center',
     };
     if (!this.current) {
       this.display(spec);
@@ -134,6 +143,7 @@ export class Banners {
     this.left = spec.seconds;
     this.outing = false;
     this.box.dataset.style = spec.style;
+    this.box.dataset.pos = spec.pos;
     this.box.style.setProperty('--dur', `${spec.seconds}s`);
     this.title.textContent = '';
     // Letters as spans for the shimmer / bounce (textContent each).

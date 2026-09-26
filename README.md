@@ -52,4 +52,4 @@ npm run build        # typecheck + production build → dist/
 Stack: Vite 8 · TypeScript 7 (strict) · Three.js 0.186 · Web Audio · Gamepad API. Same proven format as MAILBOX
 MAYHEM, TRASH PANDA TROUBLE and ATHLETE MAYHEM.
 
-Deploy: static (`dist/`), Netlify-ready (`netlify.toml`).
+**Play it:** https://bad-hair-day.netlify.app — static deploy (`dist/`) on Netlify (`netlify.toml`).

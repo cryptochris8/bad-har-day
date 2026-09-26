@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HairSession } from '../../../src/activities/hair/session';
+import { DECLARED_SELF, HairSession } from '../../../src/activities/hair/session';
 import { BRUSH_SPECS, SELF_RATE, smoothness } from '../../../src/activities/hair/rules';
 import type { GirlId } from '../../../src/family/types';
 import type { GirlHairPlan } from '../../../src/plan/types';
@@ -68,7 +68,7 @@ describe('HairSession', () => {
     expect(dh).toBeCloseTo((SELF_RATE * BRUSH_SPECS.teal.self * 10) / 36, 3);
   });
 
-  it('declares "I\'M DONE!" once at the girl’s own threshold, then stops self-brushing', () => {
+  it('declares "I\'M DONE!" once at the girl’s own threshold, then keeps brushing (slower)', () => {
     const s = make(plan({ heidi: { condition: 'light', doneAt: 0.9, seed: 3 } }), 'heidi');
     s.setFocus('addy');
     let declared: GirlId[] = [];
@@ -81,20 +81,49 @@ describe('HairSession', () => {
     expect(s.g.heidi.declared).toBe(true);
     expect(declared.filter((g) => g === 'heidi').length).toBe(1);
     expect(at).toBeGreaterThanOrEqual(0.9);
-    const frozen = s.smooth('heidi');
+    const at5 = s.smooth('heidi');
     s.tick(5);
-    expect(s.smooth('heidi')).toBeCloseTo(frozen, 9);
+    expect(s.smooth('heidi')).toBeGreaterThan(at5); // she keeps fussing with it
+    expect(s.g.heidi.declared).toBe(true);
   });
 
-  it('manual DONE for the focused girl', () => {
+  it('manual DONE for the focused girl confirms her (Mom may inspect); self-declares only declare', () => {
     const s = make();
     expect(s.declare('ellie', true)).toBe(true);
     expect(s.declare('ellie', true)).toBe(false);
     expect(s.g.ellie.declaredByPlayer).toBe(true);
+    expect(s.g.ellie.confirmed).toBe(true);
     expect(s.allDeclared).toBe(false);
     s.declare('addy');
     s.declare('heidi');
     expect(s.allDeclared).toBe(true);
+    expect(s.allConfirmed).toBe(false); // everyone SAYS so — the player still decides (or calls Mom)
+    s.confirmAll();
+    expect(s.allConfirmed).toBe(true);
+  });
+
+  it('the FOCUSED girl never declares herself done — only DONE or 100 % does', () => {
+    const s = make(plan({ ellie: { condition: 'light', doneAt: 0.7, seed: 3 } }), 'ellie');
+    s.g.ellie.field.fill(0.05); // 95 % — way past her threshold
+    for (let i = 0; i < 300; i++) s.tick(0.1);
+    expect(s.g.ellie.declared).toBe(false);
+    s.g.ellie.field.fill(0);
+    const ev = s.tick(0.1);
+    expect(ev.perfect).toContain('ellie');
+    expect(s.g.ellie.declared && s.g.ellie.confirmed).toBe(true);
+  });
+
+  it('declared girls keep brushing themselves, a bit slower', () => {
+    const s = make(plan({ addy: { condition: 'sleepMess', seed: 5 }, heidi: { condition: 'sleepMess', seed: 5 } }), 'ellie');
+    s.g.addy.declared = true; // same hair and brush speed class (purple vs teal); one of them says she's done
+    const a0 = s.smooth('addy');
+    const h0 = s.smooth('heidi');
+    for (let i = 0; i < 50; i++) s.tick(0.1);
+    const da = s.smooth('addy') - a0;
+    const dh = s.smooth('heidi') - h0;
+    expect(da).toBeGreaterThan(0);
+    expect(da).toBeLessThan(dh);
+    expect(da / dh).toBeCloseTo(DECLARED_SELF, 1);
   });
 
   it('picture day: a one-time "perfect" event at 100 %', () => {

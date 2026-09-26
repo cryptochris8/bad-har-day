@@ -27,9 +27,12 @@ import type { CameraGoal, Vec3Like } from '../../render/types';
 import type { Portrait, PortraitRow } from '../../ui/types';
 import { VANITY_STOOL_H, type AnchorId } from '../../world/types';
 import { CONDITION_INFO, bedheadFor } from './conditions';
+import { effectiveFov } from '../../render/camera';
+import { colOf, rowOf } from '../../hair/space';
+import { HairGuides, type CellHint } from './guides';
 import { MirrorReflection } from './mirror';
-import { COUNTER_LAYOUT, SHOT_SIDES, brushingShot, inspectShot, magnifier, wideShot } from './props';
-import { APPROVE_T, BRUSH_SPECS, hairStars, momVerdict, speedBand, type SnagReason } from './rules';
+import { COUNTER_LAYOUT, SHOT_SIDES, brushingShot, fitScale, inspectBackShot, inspectShot, magnifier, wideShot } from './props';
+import { APPROVE_T, CLEAR_T, KNOT_T, displayPercent, guideRow, hairStars, momVerdict, speedBand, type SnagReason } from './rules';
 import { HairSession } from './session';
 
 type Phase = 'setup' | 'battle' | 'choice' | 'brushing' | 'mom' | 'end';
@@ -58,11 +61,14 @@ const GRAB_LINES_OTHERS = ['Hey!', 'I called it!', 'No fair!'];
 const GULP_LINES = ['Uh-oh.', 'Act natural!', 'Is that… MOM?'];
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const realNow = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const damp = (a: number, b: number, rate: number, dt: number) => a + (b - a) * (1 - Math.exp(-rate * dt));
 
 const _p = new THREE.Vector3();
 const _n = new THREE.Vector3();
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _ndc = new THREE.Vector2();
 
@@ -98,8 +104,45 @@ class HairActivity implements Activity {
   private grabber: GirlId = 'addy';
   private momEarly = false;
   private momStarted = false;
-  private allDoneT = -1;
+  /** Countdown to Mom once everyone is confirmed done (s), −1 = not called. */
+  private momCallT = -1;
+  /** "Everyone says they're done — call Mom?" was offered. */
+  private askedMom = false;
   private warned = false;
+  private guides: HairGuides | null = null;
+  private readonly goalCam = new THREE.PerspectiveCamera();
+  private mirrorPos = new THREE.Vector3();
+  private mirrorNrm = new THREE.Vector3(0, 0, 1);
+  private mirrorHalf = { w: 1.1, h: 0.46 };
+  /** Pad/keyboard hint sequence: 0 = brush prompt, 1 = switch prompt, 2 = none. */
+  private hintStage = 0;
+  private hintPromptT = 0;
+  /** Real (wall-clock) time of the last applied stroke segment — stroke speed never uses capped game time. */
+  private lastApplyReal = 0;
+  /**
+   * Raw pointer path since the last frame (clientX, clientY, time ms): mouse/touch strokes are applied along every
+   * event, not just one sample per frame — strokes stay exact on slow devices / low frame rates.
+   */
+  private readonly evBuf = new Float64Array(3 * 128);
+  private evCount = 0;
+  private evDown = false;
+  private evCanvas: HTMLElement | null = null;
+  private readonly onPtrEvent = (e: Event): void => {
+    if (this.phase !== 'brushing' || this.choiceOpen) return;
+    const ev = e as PointerEvent;
+    if (ev.type === 'pointerdown') {
+      this.evCount = 0;
+      this.evDown = true;
+    } else if (!this.evDown && !this.pressing) return; // only the path of a pressed stroke matters
+    if (this.evCount >= 128) return;
+    const o = this.evCount * 3;
+    this.evBuf[o] = ev.clientX;
+    this.evBuf[o + 1] = ev.clientY;
+    this.evBuf[o + 2] = realNow();
+    this.evCount++;
+  };
+  /** Dev stats: stroke segments applied, snags by reason, tangle removed. */
+  private readonly stats = { segments: 0, ends: 0, speed: 0, removed: 0, downs: 0, misses: 0, stuckFrames: 0, lastSpeed: 0, maxSpeed: 0, dvSum: 0 };
   private choiceOpen = false;
   private readonly inspected = new Map<GirlId, { smooth: number; approved: boolean }>();
   /** Dev/e2e: which girl Mom is on and what she's doing. */
@@ -204,6 +247,20 @@ class HairActivity implements Activity {
       this.mirror = null;
     }
 
+    const mm = ctx.world.fixtures.vanity.mirror;
+    mm.updateWorldMatrix(true, false);
+    this.mirrorPos.setFromMatrixPosition(mm.matrixWorld);
+    this.mirrorNrm.set(0, 0, 1).transformDirection(mm.matrixWorld);
+    mm.geometry.computeBoundingBox();
+    const bb = mm.geometry.boundingBox;
+    if (bb) this.mirrorHalf = { w: (bb.max.x - bb.min.x) / 2, h: (bb.max.y - bb.min.y) / 2 };
+    this.guides = new HairGuides();
+    const canvas = ctx.renderer.domElement as HTMLElement | undefined;
+    if (canvas && typeof canvas.addEventListener === 'function') {
+      this.evCanvas = canvas;
+      for (const t of ['pointerdown', 'pointermove', 'pointerup'] as const) canvas.addEventListener(t, this.onPtrEvent, { passive: true });
+    }
+
     if (import.meta.env?.DEV) (globalThis as unknown as { __BHD_HAIR__?: unknown }).__BHD_HAIR__ = this.debugApi();
     void this.run(++this.gen);
   }
@@ -262,6 +319,10 @@ class HairActivity implements Activity {
     if (!ctx) return;
     try {
       this.stopBrushFx();
+      if (this.evCanvas) for (const t of ['pointerdown', 'pointermove', 'pointerup'] as const) this.evCanvas.removeEventListener(t, this.onPtrEvent);
+      this.evCanvas = null;
+      this.guides?.dispose();
+      this.guides = null;
       this.mirror?.dispose();
       this.mirror = null;
       for (const b of this.brushes.values()) b.dispose();
@@ -447,7 +508,7 @@ class HairActivity implements Activity {
       void ctx.wait(0.25 + oo * 0.45).then(() => {
         if (!this.alive(gen)) return;
         st.c.play(oo === 0 ? 'gasp' : 'noooo');
-        st.c.setExpression(oo === 0 ? 'surprised' : 'dramatic', 2.5);
+        st.c.setExpression(oo === 0 ? 'surprised' : 'pout', 2.5);
         this.say(st.c, line, 'shout', 1.7);
       });
     }
@@ -520,14 +581,16 @@ class HairActivity implements Activity {
     const dev = ctx.input.lastDevice;
     const sub =
       dev === 'touch'
-        ? 'Drag DOWN on her hair. Tap a portrait to switch girls.'
+        ? 'Drag down on her hair from the glowing line · tap a portrait to switch girls'
         : dev === 'gamepad'
-          ? 'Stick to aim · hold ✕/A to brush · L1/R1 switch girls'
-          : dev === 'keyboard'
-            ? 'Arrows to aim · hold Space to brush · Q/R switch girls'
-            : 'Click and drag DOWN on her hair · Q/R switch girls';
+          ? 'Aim with the stick, hold the button to brush · switch girls anytime'
+          : 'Drag down with the mouse — or aim with the arrows and hold the button';
     ctx.ui.instruction('Brush DOWN — start at the ENDS!', sub);
     this.hintT = 7;
+    // Device glyph prompts (never hard-coded button names): hold to brush, then how to switch girls.
+    this.hintStage = dev === 'touch' ? 2 : 0;
+    this.hintPromptT = 0;
+    if (this.hintStage === 0) ctx.ui.prompt({ text: 'Hold to brush DOWN', slot: 'primary', hold: true });
   }
 
   private enablePointer(): void {
@@ -541,6 +604,11 @@ class HairActivity implements Activity {
   private brushingUpdate(dt: number, controls: GameControls, clicks: readonly string[]): void {
     const ctx = this.ctx!;
     const session = this.session!;
+    // A modal prompt ("call Mom?") is open: everything waits (clicks under it are ignored).
+    if (this.choiceOpen) {
+      this.updateCamera(dt);
+      return;
+    }
     // Hints / timers.
     if (this.hintT > 0) {
       this.hintT -= dt;
@@ -553,9 +621,12 @@ class HairActivity implements Activity {
     if (controls.nextPressed) want = this.cycle(1);
     for (const c of clicks) if (GIRLS.includes(c as GirlId)) want = c as GirlId;
     if (want && want !== session.focus) this.applyFocus(want, false);
-    // PASS / DONE.
+    // PASS / DONE / CALL MOM.
     if (controls.secondaryPressed || clicks.includes('pass')) this.tryPass();
     if (controls.altPressed || clicks.includes('done')) this.declareFocused();
+    if (clicks.includes('mom')) this.callMom();
+    if (this.choiceOpen) return; // DONE may have just opened the "call Mom?" prompt
+    this.updateHintPrompt(dt);
 
     const ev = session.tick(dt, true);
     for (const g of ev.declared) this.onDeclared(g);
@@ -566,22 +637,80 @@ class HairActivity implements Activity {
     this.brushInput(dt);
     this.updateCamera(dt);
 
-    // Mom arrives when everyone says they're done (after a short "quick, last knots!" beat) or at the cap.
+    // Mom comes when the player has said DONE for everyone (or they're all at 100 %), or at the clock cap. If the
+    // girls all SAY they're done while unattended, the player is asked (never auto-started).
     const actEnd = ACT3.end;
     if (!this.warned && ctx.clock.minutes >= actEnd - 7) {
       this.warned = true;
       ctx.ui.toast("Mom's hair check is coming soon!", 'eye', 3);
     }
-    if (session.allDeclared && this.allDoneT < 0) {
-      this.allDoneT = 3.5;
-      ctx.ui.toast('Everybody says they’re done… MOM IS COMING!', 'eye', 3);
+    if (session.allConfirmed && this.momCallT < 0 && !this.momStarted) {
+      this.momCallT = 2.2;
+      ctx.ui.toast('Everybody’s ready… MOM IS COMING!', 'eye', 2.5);
       ctx.audio.play('clockTick');
+    } else if (session.allDeclared && !session.allConfirmed && !this.askedMom && !this.choiceOpen && this.momCallT < 0) {
+      this.askedMom = true;
+      void this.askMom();
     }
-    if (this.allDoneT > 0) {
-      this.allDoneT -= dt;
-      if (this.allDoneT <= 0 && !this.momStarted) this.startMom(true);
+    if (this.momCallT > 0) {
+      this.momCallT -= dt;
+      if (this.momCallT <= 0 && !this.momStarted) this.startMom(true);
     }
     if (!this.momStarted && ctx.clock.minutes >= actEnd - 1) this.startMom(false);
+  }
+
+  /** Hint prompts for keys / pad, with the UI's own device glyphs. */
+  private updateHintPrompt(dt: number): void {
+    const ctx = this.ctx!;
+    if (this.hintStage >= 2) return;
+    this.hintPromptT += dt;
+    if (this.hintStage === 0 && (!this.firstStroke || this.hintPromptT > 12)) {
+      this.hintStage = 1;
+      this.hintPromptT = 0;
+      ctx.ui.prompt({ text: 'Switch girls', slot: 'switch' });
+    } else if (this.hintStage === 1 && this.hintPromptT > 4) {
+      this.hintStage = 2;
+      ctx.ui.prompt(null);
+    }
+  }
+
+  /** "Everyone says they're done — call Mom?" (the player decides; KEEP BRUSHING is the default). */
+  private async askMom(): Promise<void> {
+    const ctx = this.ctx!;
+    const gen = this.gen;
+    if (this.choiceOpen || this.momStarted) return;
+    this.endStroke();
+    const prevMode = ctx.clock.mode;
+    ctx.clock.mode = 'hold';
+    this.choiceOpen = true;
+    let pick = 'keep';
+    try {
+      pick = await ctx.ui.choice(
+        "EVERYONE SAYS THEY'RE DONE!",
+        [
+          { id: 'mom', label: 'CALL MOM', sub: 'Hair check time!', icon: 'eye', color: 'var(--bhd-coral)' },
+          { id: 'keep', label: 'KEEP BRUSHING', sub: 'A few more strokes…', icon: 'brush', color: 'var(--bhd-mint)' },
+        ],
+        { defaultId: 'keep', subtitle: '…are they, though? Mom approves at 95 %.' },
+      );
+    } finally {
+      this.choiceOpen = false;
+    }
+    if (!this.alive(gen) || this.phase !== 'brushing') return;
+    ctx.clock.mode = prevMode === 'hold' ? 'run' : prevMode;
+    if (pick === 'mom') this.callMom();
+    else ctx.ui.toast('Keep going — tap CALL MOM when they’re ready.', 'brush', 2.4);
+  }
+
+  /** The player calls Mom now. */
+  private callMom(): void {
+    const ctx = this.ctx!;
+    const session = this.session!;
+    if (this.momStarted || this.momCallT > 0 || this.phase !== 'brushing') return;
+    session.confirmAll();
+    this.momCallT = 1.2;
+    ctx.ui.toast('MOM IS COMING!', 'eye', 2);
+    ctx.audio.play('clockTick');
   }
 
   private cycle(dir: 1 | -1): GirlId {
@@ -601,12 +730,13 @@ class HairActivity implements Activity {
       // The previous girl takes her brush back and brushes herself.
       const b = this.brushes.get(session.brushOf(prev));
       if (b) this.attachToHand(b, prevSt.c);
-      prevSt.c.setHold(session.g[prev].declared ? 'none' : 'brush');
+      prevSt.c.setHold(session.g[prev].perfect ? 'none' : 'brush');
       prevSt.rig.setBrush(null);
       prevSt.rig.setKnotMarkers('off');
     }
     session.focus = g;
     const st = this.stages.get(g)!;
+    this.guides?.attach(st.rig);
     st.c.setHold('none');
     st.c.setExpression('happy');
     st.rig.setKnotMarkers('soft');
@@ -623,9 +753,26 @@ class HairActivity implements Activity {
       this.whipT = 0.45;
       ctx.audio.play('whoosh', { volume: 0.5 });
     }
-    // Put a live virtual cursor near her ends. (Only when it is already active: PointerInput.warp() flips the
-    // source to 'virtual' without activating it, which would leave the cursor dead — see the report.)
-    if (ctx.pointer.source === 'virtual' && ctx.pointer.active) this.warpToEnds(st.rig);
+    // Put a live virtual cursor near her ends — projected with the camera she is framed by AFTER the swing (the
+    // goal), not the one still looking at the previous girl. (Only when the virtual cursor is already active:
+    // PointerInput.warp() flips the source to 'virtual' without activating it.)
+    this.shotFor(st, this.camGoal);
+    if (ctx.pointer.source === 'virtual' && ctx.pointer.active) this.warpToEnds(st.rig, this.goalCamera(this.camGoal));
+  }
+
+  /** A scratch camera matching a shot goal (for projecting where things will be once the camera arrives). */
+  private goalCamera(goal: CameraGoal): THREE.PerspectiveCamera {
+    const cam = this.ctx!.camera.camera;
+    const gc = this.goalCam;
+    gc.aspect = cam.aspect;
+    gc.near = cam.near;
+    gc.far = cam.far;
+    gc.fov = effectiveFov(goal.fov ?? cam.fov, cam.aspect);
+    gc.position.set(goal.position.x, goal.position.y, goal.position.z);
+    gc.lookAt(goal.target.x, goal.target.y, goal.target.z);
+    gc.updateProjectionMatrix();
+    gc.updateMatrixWorld(true);
+    return gc;
   }
 
   private toolBrush(): Brush | null {
@@ -663,7 +810,7 @@ class HairActivity implements Activity {
     const line = HANDOFF_LINES[(session.passes + ctx.plan.seed) % HANDOFF_LINES.length]!;
     void ctx.wait(0.35).then(() => {
       if (!this.alive(gen)) return;
-      from.c.setExpression('dramatic', 2.2);
+      from.c.setExpression('pout', 2.2);
       this.say(from.c, line, 'say', 2);
       recv.c.setExpression('joy', 2);
       recv.c.play('cheer');
@@ -676,44 +823,58 @@ class HairActivity implements Activity {
     black.root.position.copy(start);
     black.root.add(this.toolHead);
     if (giveBack) this.attachToHand(giveBack, from.c);
-    from.c.setHold(session.g[from.id].declared ? 'none' : 'brush');
+    from.c.setHold(session.g[from.id].perfect ? 'none' : 'brush');
     void ctx.wait(0.9).then(() => this.alive(gen) && black.setGlow(0.3));
     ctx.fx.burst('sparkle', start, { count: 10, color: PAL.blackBrushSheen });
   }
 
+  /** DONE for the focused girl: she's ready for Mom. Pressed again once everyone says so → offer to call Mom. */
   private declareFocused(): void {
     const ctx = this.ctx!;
     const session = this.session!;
     const g = session.focus;
-    if (session.declare(g, true)) this.onDeclared(g);
-    else if (this.toastT <= 0) {
-      ctx.ui.toast(`${DISPLAY_NAME[g]} is already done — switch girls!`, 'check', 2);
+    if (session.declare(g, true)) {
+      this.onDeclared(g, true);
+      return;
+    }
+    if (session.allDeclared && !this.choiceOpen) {
+      void this.askMom();
+      return;
+    }
+    if (this.toastT <= 0) {
+      ctx.ui.toast(`${DISPLAY_NAME[g]} is ready for Mom — switch girls!`, 'check', 2);
       this.toastT = 1.5;
     }
   }
 
-  private onDeclared(g: GirlId): void {
+  /** "I'M DONE!" — by herself (unattended; she keeps fussing with her hair) or via the player's DONE. */
+  private onDeclared(g: GirlId, byPlayer = false): void {
     const ctx = this.ctx!;
     const st = this.stages.get(g);
     if (!st) return;
     ctx.audio.play('girlDone');
-    this.say(st.c, "I'M DONE!", 'shout', 2);
+    this.say(st.c, byPlayer ? 'All done!' : "I'M DONE!", 'shout', 2);
     st.c.setExpression('proud', 3);
     st.c.emote('check', 1.6);
-    if (g !== this.session!.focus) {
-      st.c.setHold('none');
-      st.rig.setBrush(null);
-    }
   }
 
+  /** 100 %: every section brushed out (picture day's special sparkle moment). */
   private onPerfect(g: GirlId): void {
     const ctx = this.ctx!;
     const st = this.stages.get(g);
     if (!st) return;
-    ctx.ui.banner('PICTURE PERFECT!', 'fun', { sub: `${DISPLAY_NAME[g]} is ready for her close-up`, icon: 'sparkle', seconds: 2.4 });
+    const s = this.session!.g[g];
+    if (s.perfectNeeded) ctx.ui.banner('PICTURE PERFECT!', 'fun', { sub: `${DISPLAY_NAME[g]} is ready for her close-up`, icon: 'sparkle', seconds: 2.4, pos: 'bottom' });
+    else this.say(st.c, '100%! I’M DONE!', 'shout', 2);
     ctx.audio.play('shine');
+    ctx.audio.play('girlDone', { delay: 0.2 });
     ctx.fx.burst('sparkle', st.rig.surfacePoint(0.5, 0.4, v3()), { count: 26, color: PAL.sparkle, size: 1.3 });
     st.c.setExpression('love', 2.5);
+    st.c.emote('sparkle', 1.8);
+    if (g !== this.session!.focus) {
+      st.c.setHold('none');
+      st.rig.setBrush(null);
+    }
   }
 
   /** Pointer → hair-space strokes on the focused girl. */
@@ -741,6 +902,12 @@ class HairActivity implements Activity {
       this.virtualPlaced = true;
       this.warpToEnds(rig);
     }
+    // Mouse / touch: replay the exact pointer path since the last frame.
+    if (p.source !== 'virtual' && this.evCount > 0 && this.stuckT <= 0) this.replayPath(rig, cam);
+    else if (this.evCount > 0) {
+      this.evCount = 0;
+      this.evDown = false;
+    }
     // Raycast the proxy (hair space uv).
     let hit = false;
     let u = this.hoverU;
@@ -756,6 +923,7 @@ class HairActivity implements Activity {
       } else if (p.source === 'virtual' && Math.hypot(this.stickX, this.stickY) < 0.1) this.snapAssist(rig, dt);
     }
     if (this.stuckT > 0) {
+      this.stats.stuckFrames++;
       this.stuckT -= dt;
       u = this.stuckU;
       v = this.stuckV;
@@ -768,13 +936,18 @@ class HairActivity implements Activity {
       }
     } else if (p.down && (hit || this.pressing)) {
       if (!this.pressing) {
-        if (!hit) return;
+        if (!hit) {
+          if (p.pressed) this.stats.misses++;
+          return;
+        }
+        this.stats.downs++;
         this.pressing = true;
         this.strokeStartV = v;
         this.lastU = u;
         this.lastV = v;
         this.accDt = 0;
         this.speedS = 0;
+        this.lastApplyReal = realNow();
       }
       this.accDt += dt;
       if (hit) {
@@ -805,6 +978,7 @@ class HairActivity implements Activity {
       tool.root.position.lerp(_p, k);
       tool.root.quaternion.slerp(_q, k);
     }
+    this.updateGuides(dt, rig, u, v);
     // Sound + trail follow the stroke speed.
     this.speedS = damp(this.speedS, 0, 3, dt);
     if (this.loop) this.loop.set(this.pressing ? clamp01(0.25 + this.speedS * 0.45) : 0, 0.85 + clamp01(this.speedS * 0.5) * 0.4);
@@ -824,14 +998,59 @@ class HairActivity implements Activity {
     }
   }
 
+  /** Apply the buffered pointer path (every event since the last frame) as stroke segments. */
+  private replayPath(rig: GirlHairRig, cam: THREE.Camera): void {
+    const ctx = this.ctx!;
+    const n = this.evCount;
+    const down = this.evDown;
+    this.evCount = 0;
+    this.evDown = false;
+    const rect = ctx.renderer.domElement.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return;
+    for (let i = 0; i < n; i++) {
+      const o = i * 3;
+      _ndc.set(((this.evBuf[o]! - rect.left) / rect.width) * 2 - 1, -(((this.evBuf[o + 1]! - rect.top) / rect.height) * 2 - 1));
+      this.ray.setFromCamera(_ndc, cam);
+      const h = this.ray.intersectObject(rig.proxy, false)[0];
+      if (!h?.uv) continue;
+      const u = h.uv.x;
+      const v = h.uv.y;
+      const t = this.evBuf[o + 2]!;
+      if (!this.pressing) {
+        if (!down || i !== 0) continue; // a stroke starts where the finger / button went down
+        this.pressing = true;
+        this.stats.downs++;
+        this.strokeStartV = v;
+        this.lastU = u;
+        this.lastV = v;
+        this.accDt = 0;
+        this.speedS = 0;
+        this.lastApplyReal = t;
+        continue;
+      }
+      if (Math.hypot(u - this.lastU, v - this.lastV) > 0.003) this.applyStroke(u, v, t);
+      if (this.stuckT > 0) break; // snagged: the rest of this path is held
+    }
+  }
+
   /** Apply the movement since the last stroke point to the focused girl's field. */
-  private applyStroke(u: number, v: number): void {
+  private applyStroke(u: number, v: number, at?: number): void {
     const ctx = this.ctx!;
     const session = this.session!;
     const g = session.focus;
     const st = this.stages.get(g)!;
-    const dt = Math.max(1 / 240, this.accDt);
+    // Real time between samples (game dt is capped at 0.1 s per frame, which would make gentle strokes on a
+    // slow device read as "too fast"); generously clamped.
+    const now = at ?? realNow();
+    const dt = Math.min(0.6, Math.max(1 / 240, this.accDt, (now - this.lastApplyReal) / 1000));
+    this.lastApplyReal = now;
     const r = session.stroke(g, this.lastU, this.lastV, u, v, dt, this.strokeStartV);
+    this.stats.segments++;
+    this.stats.removed += r.removed;
+    this.stats.lastSpeed = Math.round(r.speed * 100) / 100;
+    this.stats.maxSpeed = Math.max(this.stats.maxSpeed, this.stats.lastSpeed);
+    this.stats.dvSum += Math.max(0, v - this.lastV);
+    if (r.snag) this.stats[r.snag.reason]++;
     const dvs = (v - this.lastV) / dt;
     if (dvs > 0) this.speedS = Math.max(this.speedS * 0.6, dvs);
     this.accDt = 0;
@@ -882,7 +1101,7 @@ class HairActivity implements Activity {
     this.stuckT = 0.45;
     this.stuckU = u;
     this.stuckV = v;
-    st.c.setExpression('eek', 1.2);
+    st.c.setExpression('surprised', 1.2);
     // She glances back over her shoulder at the brush ("eep!") so her face reads from behind, too.
     st.c.lookAt(ctx.camera.camera.position);
     st.lookT = 1.1;
@@ -913,11 +1132,46 @@ class HairActivity implements Activity {
     if (this.loop) this.loop.set(0, 1);
   }
 
-  /** Put the virtual cursor on the girl's hair ends (keys / pad). */
-  private warpToEnds(rig: HairRig): void {
+  /** Put the virtual cursor on the girl's hair ends (keys / pad), as seen by `cam` (default: the live camera). */
+  private warpToEnds(rig: HairRig, cam?: THREE.Camera): void {
     const ctx = this.ctx!;
-    rig.surfacePoint(0.5, 0.8, _p).project(ctx.camera.camera);
+    rig.surfacePoint(0.5, 0.8, _p).project(cam ?? ctx.camera.camera);
     if (Number.isFinite(_p.x) && Number.isFinite(_p.y)) ctx.pointer.warp(Math.max(-0.9, Math.min(0.9, _p.x)), Math.max(-0.9, Math.min(0.9, _p.y)));
+  }
+
+  /**
+   * The ENDS guide band (top of the lowest section that still has a knot) + the knotted section under the brush:
+   * gold = work it now; pink = a knot further down this lock will catch the brush (start lower).
+   */
+  private updateGuides(dt: number, rig: GirlHairRig, u: number, v: number): void {
+    const g = this.guides;
+    const session = this.session!;
+    if (!g) return;
+    const f = session.g[session.focus].field;
+    const cols = session.cols;
+    const rows = session.rows;
+    const band = guideRow(f, cols, rows);
+    const bandV = band >= 1 ? band / rows : null;
+    let cell: { u0: number; u1: number; v0: number; v1: number; hint: CellHint } | null = null;
+    const col = colOf(u, cols);
+    const r0 = rowOf(v, rows);
+    let rk = -1;
+    for (let r = rows - 1; r >= 0; r--)
+      if (f[r * cols + col]! >= KNOT_T) {
+        rk = r;
+        break;
+      }
+    let row = -1;
+    let hint: CellHint = 'go';
+    if (rk >= 0 && r0 <= rk) {
+      row = rk;
+      hint = r0 === rk ? 'go' : 'wait';
+    } else if (f[r0 * cols + col]! >= 0.15) {
+      row = r0;
+      hint = r0 === rows - 1 || f[(r0 + 1) * cols + col]! <= CLEAR_T ? 'go' : 'wait';
+    }
+    if (row >= 0) cell = { u0: col / cols, u1: (col + 1) / cols, v0: row / rows, v1: (row + 1) / rows, hint };
+    g.update(dt, rig, bandV, cell, this.pressing);
   }
 
   /** Keyboard / gamepad cursor: gently pull it back onto the hair when it drifts off. */
@@ -950,7 +1204,7 @@ class HairActivity implements Activity {
       if (st.id === session.focus) continue;
       st.eekT -= dt;
       const s = session.g[st.id];
-      if (s.working < 0 || s.declared) {
+      if (s.working < 0) {
         st.rig.setBrush(null);
         continue;
       }
@@ -998,9 +1252,17 @@ class HairActivity implements Activity {
     if (!st) return;
     this.whipT -= dt;
     this.camStiff = this.whipT > 0 ? 10 : 4.5;
-    const xs = GIRLS.map((g) => this.stages.get(g)?.stool.x ?? 0);
-    brushingShot(st.stool.x, st.stool.z, st.head.y, SHOT_SIDES[GIRLS.indexOf(st.id)]!, Math.min(...xs) - 0.85, Math.max(...xs) + 0.8, this.camGoal);
+    this.shotFor(st, this.camGoal);
     ctx.camera.shot(this.camGoal, this.camStiff);
+  }
+
+  /** The brushing framing for a girl (pulled back on narrow screens so all her locks fit). */
+  private shotFor(st: GirlStage, out: CameraGoal): CameraGoal {
+    const cam = this.ctx!.camera.camera;
+    const s = SHOT_SIDES[GIRLS.indexOf(st.id)]!;
+    const xs = [this.stages.get('addy')?.stool.x ?? 0, this.stages.get('heidi')?.stool.x ?? 0];
+    const tanV = Math.tan((effectiveFov(s.fov, cam.aspect) * Math.PI) / 360);
+    return brushingShot(st.head.x, st.head.y, st.head.z, s, Math.min(...xs) - 0.85, Math.max(...xs) + 0.8, out, fitScale(cam.aspect, tanV));
   }
 
   private portraitRow(): PortraitRow {
@@ -1010,34 +1272,41 @@ class HairActivity implements Activity {
       const insp = this.inspected.get(g);
       const smooth = session.smooth(g);
       const st = this.stages.get(g);
+      const pct = displayPercent(s.field);
       const status = insp
         ? insp.approved
           ? 'MOM APPROVED ✓'
           : 'MOM ASSIST ♥'
-        : s.declared
-          ? "I'M DONE!"
-          : `${Math.round(smooth * 100)}%`;
+        : s.confirmed
+          ? `READY ✓ · ${pct}%`
+          : s.declared
+            ? `I'M DONE! · ${pct}%`
+            : `${pct}%`;
       const mood: Portrait['mood'] = st && st.eekT > 0.6 ? 'eek' : s.declared || insp?.approved ? 'proud' : smooth < 0.5 ? 'sleepy' : 'happy';
       return {
         id: g,
         name: DISPLAY_NAME[g],
         color: COLOR[g],
-        progress: clamp01(smooth),
+        progress: clamp01(pct / 100),
+        goal: APPROVE_T,
         status,
         badge: session.holder === g ? 'blackBrush' : null,
         focused: this.phase === 'brushing' && session.focus === g,
         mood,
       };
     });
-    if (this.phase !== 'brushing') return { items };
+    if (this.phase !== 'brushing') return { items, compact: true };
     const focusHolds = session.focus === session.holder;
-    return {
-      items,
-      chips: [
-        { id: 'pass', label: 'PASS THE BLACK BRUSH', slot: 'secondary', icon: 'blackBrush', disabled: focusHolds },
-        { id: 'done', label: "SHE'S DONE", slot: 'alt', icon: 'check', disabled: session.g[session.focus].declared },
-      ],
-    };
+    const touch = this.ctx!.input.lastDevice === 'touch';
+    const chips: NonNullable<PortraitRow['chips']> = [];
+    // Touch already has big PASS / DONE buttons: no duplicate chips there.
+    if (!touch) {
+      chips.push({ id: 'pass', label: 'PASS THE BLACK BRUSH', slot: 'secondary', icon: 'blackBrush', disabled: focusHolds });
+      chips.push({ id: 'done', label: "SHE'S DONE", slot: 'alt', icon: 'check', disabled: session.g[session.focus].confirmed && !session.allDeclared });
+    }
+    if (session.allDeclared && !this.momStarted && this.momCallT < 0) chips.push({ id: 'mom', label: 'CALL MOM', icon: 'eye' });
+    // Compact row (top-right corner) keeps the centre/upper-middle clear for her face in the mirror.
+    return chips.length ? { items, chips, compact: true } : { items, compact: true };
   }
 
   // ── Mom's hair check ──────────────────────────────────────────────────────
@@ -1046,6 +1315,8 @@ class HairActivity implements Activity {
     if (this.momStarted) return;
     this.momStarted = true;
     this.momEarly = early;
+    // Never leave a "call Mom?" prompt hanging over her check (resolves it with its default).
+    if (this.choiceOpen && this.ctx) this.ctx.ui.handleMenuActions(['confirm']);
     const gen = this.gen;
     void this.momScript(gen).catch((e: unknown) => {
       console.error('[hair] mom script error', e);
@@ -1074,6 +1345,7 @@ class HairActivity implements Activity {
     }
     ctx.hud.objective = "MOM'S HAIR CHECK";
     ctx.ui.portraits(null);
+    this.guides?.detach();
     ctx.audio.setMusic('boss');
     ctx.audio.play('bossIntro');
     await ctx.ui.bossIntro('MOM', 'THE HAIR INSPECTOR');
@@ -1127,34 +1399,48 @@ class HairActivity implements Activity {
     const ctx = this.ctx!;
     const session = this.session!;
     const ashley = ctx.family.ashley;
+    const shotSide = SHOT_SIDES[GIRLS.indexOf(st.id)]!;
+    const xs = [this.stages.get('addy')?.stool.x ?? 0, this.stages.get('heidi')?.stool.x ?? 0];
+    const minX = Math.min(...xs) - 0.85;
+    const maxX = Math.max(...xs) + 0.8;
+    const cam = ctx.camera.camera;
+    const tanV = Math.tan((effectiveFov(56, cam.aspect) * Math.PI) / 360);
+    const scale = fitScale(cam.aspect, tanV);
+    // Mom leans in beside her, on the far side from the camera, so her hair's back (where the knots are) faces
+    // the camera — the magnifier sweep and the red swirls read from behind.
+    const momSide = -shotSide.side;
+    const spot = { x: st.stool.x + momSide * (st.id === 'ellie' ? 0.27 : 0.32), y: 0, z: st.stool.z + 0.5 };
+    const faceYaw = Math.atan2(st.stool.x - spot.x, st.stool.z + 0.08 - spot.z);
+    const back: CameraGoal = { position: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 } };
+    inspectBackShot(st.head.x, st.head.y, st.head.z, shotSide, minX, maxX, back, scale);
+    const front: CameraGoal = { position: { x: 0, y: 0, z: 0 }, target: { x: 0, y: 0, z: 0 } };
+    inspectShot(st.head.x, st.head.z, st.head.y, front, momSide as -1 | 1);
     this.momStep = `walk:${st.id}`;
-    const spot = { x: st.stool.x + 0.1, y: 0, z: st.stool.z + 0.72 };
-    ctx.camera.shot(inspectShot(st.stool.x, st.head.z, st.head.y, this.camGoal), 3.2);
-    await Promise.race([ctx.npcs.walkTo(ashley, spot, { speed: 1.5, faceYaw: Math.PI }), ctx.wait(2.2)]);
+    ctx.camera.shot(back, 3.2);
+    await Promise.race([ctx.npcs.walkTo(ashley, spot, { speed: 1.5, faceYaw }), ctx.wait(2.2)]);
     if (!this.alive(gen)) return;
-    ctx.npcs.place(ashley, spot, Math.PI);
+    ctx.npcs.place(ashley, spot, faceYaw);
     this.momStep = `inspect:${st.id}`;
-    ashley.play('inspect', { duration: 2.2 });
+    ashley.play('inspect', { duration: 2.4 });
     ashley.setExpression('smug'); // mock-serious, never stern
     st.rig.setKnotMarkers('inspect');
     ctx.audio.play('momInspect');
     this.say(ashley, 'Hmmm…', 'think', 1.6);
     st.c.setExpression('worried', 2.4);
-    // The magnifying-glass sweep across her hair.
+    // The magnifying-glass sweep across the back of her hair.
     const mag = this.magnifierMesh ?? magnifier();
     if (!this.magnifierMesh) {
       this.magnifierMesh = mag;
       this.mirror?.include(mag);
     }
     ctx.root.add(mag);
-    for (let t = 0; t <= 1.9 && this.alive(gen); t += 0.04) {
-      const k = t / 1.9;
-      const u = 0.08 + 0.84 * (0.5 - 0.5 * Math.cos(k * Math.PI * 2));
-      const v = 0.12 + 0.3 * k;
+    for (let t = 0; t <= 2.0 && this.alive(gen); t += 0.04) {
+      const k = t / 2.0;
+      const u = 0.12 + 0.76 * (0.5 - 0.5 * Math.cos(k * Math.PI * 2));
+      const v = 0.3 + 0.5 * k;
       st.rig.surfacePoint(u, v, _p);
       st.rig.surfaceNormal(u, v, _n);
-      mag.position.copy(_p).addScaledVector(_n, 0.13);
-      mag.position.y += 0.06;
+      mag.position.copy(_p).addScaledVector(_n, 0.11);
       mag.lookAt(ctx.camera.camera.position);
       await ctx.wait(0.04);
     }
@@ -1162,39 +1448,50 @@ class HairActivity implements Activity {
     if (!this.alive(gen)) return;
     const smooth = session.smooth(st.id);
     const verdict = momVerdict(smooth);
-    const head = st.c.socket('overhead').getWorldPosition(v3());
     this.momStep = `${verdict}:${st.id}`;
     if (verdict === 'approved') {
       this.inspected.set(st.id, { smooth, approved: true });
       st.rig.setKnotMarkers('off');
-      ctx.ui.banner('MOM APPROVED ✓', 'approved', { sub: DISPLAY_NAME[st.id].toUpperCase(), icon: 'check', seconds: 2.2 });
+      // Their reactions first, face to face (no banner over Mom's face)…
+      ctx.camera.shot(front, 6);
       ctx.audio.play('momApproved');
       ctx.rumble('score');
-      ctx.fx.burst('heart', head, { count: 10 });
       ashley.play('thumbsUp');
       ashley.setExpression('love', 2.5);
       ashley.emote('heart', 1.8);
       st.c.play('hairFlip');
       st.c.setExpression('proud', 3);
       ctx.audio.play('hairFlip', { delay: 0.25 });
+      await ctx.wait(0.35);
+      if (!this.alive(gen)) return;
+      ctx.fx.burst('heart', this.bubbleAnchor(ashley, v3()), { count: 10 });
       this.say(ashley, 'Gorgeous!', 'say', 1.6);
-      await ctx.wait(2.2);
+      await ctx.wait(1.3);
+      if (!this.alive(gen)) return;
+      // …then the stamp, over the back view of her shiny hair.
+      ctx.camera.shot(back, 4);
+      ctx.fx.burst('sparkle', st.rig.surfacePoint(0.5, 0.45, v3()), { count: 20, color: PAL.sparkle });
+      ctx.ui.banner('MOM APPROVED ✓', 'approved', { sub: DISPLAY_NAME[st.id].toUpperCase(), icon: 'check', seconds: 1.9, pos: 'top' });
+      await ctx.wait(2.0);
     } else {
       this.inspected.set(st.id, { smooth, approved: false });
-      ctx.ui.banner("I'LL JUST FINISH IT…", 'boss', { seconds: 2.4, icon: 'heart' });
-      this.say(ashley, "I'll just finish it…", 'say', 2);
+      // The stamp first (back view, nobody's face under it), then Mom's line and her speedy, loving finishing
+      // touches right there on the knots.
+      ctx.ui.banner("I'LL JUST FINISH IT…", 'boss', { seconds: 1.5, icon: 'heart', pos: 'bottom' });
       ashley.setExpression('happy');
-      await ctx.wait(0.6);
+      await ctx.wait(1.3);
       if (!this.alive(gen)) return;
-      // Mom borrows the girl's brush for a speedy, loving flourish.
+      this.say(ashley, 'Almost! Let me help…', 'say', 1.8);
+      await ctx.wait(0.4);
+      if (!this.alive(gen)) return;
       const b = this.brushes.get(session.brushOf(st.id));
       if (b) this.attachToHand(b, ashley);
       ashley.setHold('brush');
       ashley.play('brushFast', { duration: 2 });
       ctx.audio.play('momFinish');
       st.c.play('noooo');
-      st.c.setExpression('dramatic', 2.4);
-      this.say(st.c, 'Nooo! I wanted to do it myself!', 'shout', 2);
+      st.c.setExpression('pout', 2.4);
+      void ctx.wait(0.5).then(() => this.alive(gen) && this.say(st.c, 'Nooo! I wanted to do it myself!', 'shout', 2));
       const f = session.g[st.id].field;
       for (let k = 0; k < 20 && this.alive(gen); k++) {
         for (let i = 0; i < f.length; i++) f[i] = f[i]! * 0.72;
@@ -1203,21 +1500,26 @@ class HairActivity implements Activity {
         st.rig.commit();
         st.rig.setBedhead(bedheadFor(session.g[st.id].condition, 1 - session.smooth(st.id), st.startMean));
         st.rig.setShine(clamp01(0.4 + k / 20));
-        if (k % 3 === 0) ctx.fx.burst('sparkle', st.rig.surfacePoint(Math.random(), 0.2 + Math.random() * 0.7, v3()), { count: 6 });
+        if (k % 3 === 0) ctx.fx.burst('sparkle', st.rig.surfacePoint(0.15 + Math.random() * 0.7, 0.3 + Math.random() * 0.6, v3()), { count: 6 });
         await ctx.wait(0.1);
       }
       if (!this.alive(gen)) return;
       st.rig.setKnotMarkers('off');
       ashley.setHold('none');
       if (b) this.attachToHand(b, st.c);
+      // The hug, face to face.
+      ctx.camera.shot(front, 6);
       ctx.audio.play('sparkle');
       ashley.play('hug');
       st.c.play('giggle');
       st.c.setExpression('joy', 2.5);
+      ashley.setExpression('love', 2);
       ashley.emote('heart', 2);
-      ctx.fx.burst('heart', head, { count: 8 });
-      ctx.audio.play('heart', { delay: 0.3 });
-      await ctx.wait(2.2);
+      await ctx.wait(0.3);
+      if (!this.alive(gen)) return;
+      ctx.fx.burst('heart', this.bubbleAnchor(st.c, v3()), { count: 8 });
+      ctx.audio.play('heart');
+      await ctx.wait(1.9);
     }
   }
 
@@ -1226,11 +1528,11 @@ class HairActivity implements Activity {
     this.momStep = 'finale';
     const vanity = ctx.world.anchor('vanity');
     const stoolZ = ctx.world.anchor('stool2').z;
-    ctx.camera.shot(wideShot(vanity.x, stoolZ), 3);
+    // Wide on the three of them + Mom cheering beside the vanity end (all in frame, faces in the mirror).
+    ctx.camera.shot({ position: { x: vanity.x - 0.2, y: 1.85, z: stoolZ + 2.0 }, target: { x: vanity.x - 0.25, y: 1.02, z: stoolZ - 0.55 }, fov: 50 }, 3);
     ctx.audio.setMusic('brushing');
-    // Mom steps aside (out of the shot) to cheer them on.
     const ashley = ctx.family.ashley;
-    ctx.npcs.place(ashley, { x: vanity.x - 1.3, y: 0, z: stoolZ + 0.55 }, Math.PI * 0.7);
+    ctx.npcs.place(ashley, { x: vanity.x - 1.5, y: 0, z: stoolZ - 0.12 }, 0.35);
     ashley.setHold('none');
     ashley.setExpression('love', 3);
     for (const st of this.stages.values()) {
@@ -1242,7 +1544,7 @@ class HairActivity implements Activity {
     }
     ctx.audio.play('hairFlip');
     ctx.audio.play('shine', { delay: 0.3 });
-    ctx.ui.banner('HAIR: GORGEOUS', 'secured', { icon: 'blackBrush', sub: 'Three heads of hair. One black brush.' });
+    ctx.ui.banner('HAIR: GORGEOUS', 'secured', { icon: 'blackBrush', sub: 'Three heads of hair. One black brush.', pos: 'bottom' });
     ctx.audio.play('taskDone', { delay: 0.2 });
     ashley.play('cheer');
     this.say(ashley, 'My beautiful girls!', 'say', 2.2);
@@ -1321,8 +1623,55 @@ class HairActivity implements Activity {
     const ctx = this.ctx;
     if (!ctx) return;
     const who = c.id === 'extra' ? 'extra' : c.id;
-    ctx.ui.bubble(c.socket('overhead').getWorldPosition(v3()), text, { speaker: who, style, seconds });
+    ctx.ui.bubble(this.bubbleAnchor(c, v3()), text, { speaker: who, style, seconds });
     if (who !== 'extra') ctx.audio.babble(who, text, style === 'shout' ? 'excited' : style === 'whisper' ? 'whisper' : 'normal');
+  }
+
+  /**
+   * A world point for a speech bubble that is ON SCREEN (below the top UI band): her face in the mirror when it's
+   * in the frame (the close-ups: the line pops out of her reflection), else above her head, else her head clamped
+   * into the frame.
+   */
+  private bubbleAnchor(c: Character, out: THREE.Vector3): THREE.Vector3 {
+    const ctx = this.ctx!;
+    const cam = ctx.camera.camera;
+    cam.updateMatrixWorld();
+    // The top ~22 % belongs to the portrait row — except in the finale (no portraits; banner at the bottom),
+    // where a bubble over Mom's head is better than one over her mouth.
+    const top = this.momStep === 'finale' ? 0.62 : 0.42;
+    const safe = (p: THREE.Vector3) => p.z > -1 && p.z < 1 && Math.abs(p.x) <= 0.8 && p.y >= -0.62 && p.y <= top;
+    const head = c.socket('head').getWorldPosition(_a);
+    // 1. Her reflection (a point just above her head, mirrored across the glass), if seen through the mirror.
+    const girl = GIRLS.includes(c.id as GirlId) && this.stages.get(c.id as GirlId)?.seated;
+    if (girl && (this.phase === 'brushing' || this.phase === 'mom')) {
+      _b.set(head.x, head.y + 0.14, head.z);
+      const d = _b.clone().sub(this.mirrorPos).dot(this.mirrorNrm);
+      _b.addScaledVector(this.mirrorNrm, -2 * d);
+      // Seen through the glass? (the line camera → reflection crosses the mirror rectangle)
+      const cp = cam.position;
+      const dc = cp.clone().sub(this.mirrorPos).dot(this.mirrorNrm);
+      const dr = _b.clone().sub(this.mirrorPos).dot(this.mirrorNrm);
+      if (dc > 0 && dr < 0) {
+        const t = dc / (dc - dr);
+        const hitX = cp.x + (_b.x - cp.x) * t - this.mirrorPos.x;
+        const hitY = cp.y + (_b.y - cp.y) * t - this.mirrorPos.y;
+        if (Math.abs(hitX) < this.mirrorHalf.w * 0.95 && Math.abs(hitY) < this.mirrorHalf.h * 0.95) {
+          out.copy(_b);
+          if (safe(_n.copy(out).project(cam))) return out;
+        }
+      }
+    }
+    // 2. Above her head.
+    c.socket('overhead').getWorldPosition(out);
+    if (safe(_n.copy(out).project(cam))) return out;
+    out.copy(head).y += 0.2;
+    if (safe(_n.copy(out).project(cam))) return out;
+    // 3. Just above her head (still in out), clamped into the safe part of the frame.
+    _n.copy(out).project(cam);
+    if (!(_n.z > -1 && _n.z < 1)) _n.z = 0.95;
+    _n.x = Math.max(-0.8, Math.min(0.8, _n.x));
+    _n.y = Math.max(-0.6, Math.min(top - 0.02, _n.y));
+    return out.copy(_n).unproject(cam);
   }
 
   /** A warm backlight glow in the doorway for Mom's entrance. */
@@ -1352,14 +1701,25 @@ class HairActivity implements Activity {
     return {
       phase: () => this.phase,
       momStep: () => this.momStep,
+      stats: () => ({ ...this.stats, removed: Math.round(this.stats.removed * 100) / 100, dvSum: Math.round(this.stats.dvSum * 100) / 100 }),
       pointer: () => {
         const p = this.ctx?.pointer;
         return p ? { src: p.source, active: p.active, down: p.down, x: Math.round(p.x), y: Math.round(p.y), pressing: this.pressing } : null;
       },
       focus: () => this.session?.focus ?? null,
+      heads: () =>
+        Object.fromEntries(
+          [...this.stages.values()].map((st) => [st.id, { head: st.head.toArray().map((x) => +x.toFixed(3)), stool: [st.stool.x, st.stool.z], tip: st.rig.surfacePoint(0.5, 1, v3()).toArray().map((x) => +x.toFixed(3)), crown: st.rig.surfacePoint(0.5, 0, v3()).toArray().map((x) => +x.toFixed(3)), side: st.rig.surfacePoint(0, 0.6, v3()).toArray().map((x) => +x.toFixed(3)) }]),
+        ),
       holder: () => this.session?.holder ?? null,
       smooth: () => Object.fromEntries(GIRLS.map((g) => [g, this.session ? Math.round(this.session.smooth(g) * 1000) / 1000 : null])),
       declared: () => Object.fromEntries(GIRLS.map((g) => [g, !!this.session?.g[g].declared])),
+      confirmed: () => Object.fromEntries(GIRLS.map((g) => [g, !!this.session?.g[g].confirmed])),
+      percent: () => Object.fromEntries(GIRLS.map((g) => [g, this.session ? displayPercent(this.session.g[g].field) : null])),
+      guide: () => (this.guides ? { band: this.guides.band.visible, cell: this.guides.cell.visible } : null),
+      callMom: () => this.callMom(),
+      /** Tell Mom she can come (the player's DONE for everyone). */
+      confirmAll: () => this.session?.confirmAll(),
       mirrorMs: () => this.mirror?.lastMs ?? null,
       mirrorPass: () => (this.mirror ? { calls: this.mirror.lastCalls, tris: this.mirror.lastTris, ms: this.mirror.lastMs } : null),
       mirrorRenders: () => this.mirror?.renders ?? 0,
@@ -1396,6 +1756,46 @@ class HairActivity implements Activity {
           canvas.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0, ...at(v1) }));
         }
         return this.session ? Math.round(this.session.smooth(this.session.focus) * 1000) / 1000 : null;
+      },
+      /** Let the unattended girls say they're done (dev: exercises the "call Mom?" prompt). */
+      allSay: () => {
+        const s = this.session;
+        if (!s) return;
+        s.elapsed = Math.max(s.elapsed, 60);
+        for (const g of GIRLS) {
+          s.g[g].field.fill(Math.min(0.18, 1 - s.g[g].doneAt - 0.01));
+          if (g === s.focus) s.declare(g, true);
+        }
+      },
+      /** Guided in-page brushing of the focused girl until `target` %: returns strokes used (real pointer events). */
+      brushTo: async (target = 95, max = 80) => {
+        const s = this.session;
+        if (!s) return null;
+        const g = s.focus;
+        let n = 0;
+        while (displayPercent(s.g[g].field) < target && n < max && this.phase === 'brushing') {
+          const f = s.g[g].field;
+          const band = guideRow(f, s.cols, s.rows);
+          const v0 = band >= 0 ? Math.max(0.06, band / s.rows + 0.02) : 0.06;
+          let best = 0;
+          let bt = -1;
+          for (let c = 0; c < s.cols; c++) {
+            let x = 0;
+            for (let r = Math.max(0, band); r < s.rows; r++) x += f[r * s.cols + c]!;
+            if (x > bt) {
+              bt = x;
+              best = c;
+            }
+          }
+          const u = n % 3 === 2 ? 0.12 + ((n * 0.37) % 0.76) : (best + 0.5) / s.cols;
+          // A comfortable ~1.2 v/s stroke (longer strokes take longer).
+          const len = 0.99 - v0;
+          const steps = Math.max(6, Math.round(len * 16));
+          await (this.debugApi().drag as (u: number, a: number, b: number, st: number, rel: boolean, ms: number) => Promise<unknown>)(u, v0, 0.99, steps, true, Math.round((len / 1.2 / steps) * 1000));
+          n++;
+          await new Promise((r) => setTimeout(r, 120));
+        }
+        return { girl: g, strokes: n, percent: displayPercent(s.g[g].field), clock: this.ctx?.clock.label() };
       },
       /** Force Mom's check now (dev). */
       mom: () => this.startMom(true),

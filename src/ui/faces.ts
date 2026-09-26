@@ -88,11 +88,18 @@ function eyesFor(mood: FaceMood, iris: string, sleepyDefault: boolean): string {
         line(`M${L - 6} ${Y}h12M${R - 6} ${Y}h12`, 3)
       );
     case 'eek':
-      return line(`M${L - 5} ${Y - 4}l7 4-7 4`, 3) + open(R, 5, 6.4);
-    case 'dramatic':
+      // Playful "oops!": big round surprised eyes with shiny pupils (no squint, no teeth).
       return (
-        `<circle cx="${L}" cy="${Y}" r="6.6" fill="#fff" ${O2}/><circle cx="${R}" cy="${Y}" r="6.6" fill="#fff" ${O2}/>` +
-        `<circle cx="${L}" cy="${Y + 1}" r="2.6" fill="${INK}"/><circle cx="${R}" cy="${Y + 1}" r="2.6" fill="${INK}"/>`
+        `<circle cx="${L}" cy="${Y}" r="6.4" fill="#fff" ${O2}/><circle cx="${R}" cy="${Y}" r="6.4" fill="#fff" ${O2}/>` +
+        `<circle cx="${L + 0.6}" cy="${Y + 0.4}" r="3.6" fill="${INK}"/><circle cx="${R + 0.6}" cy="${Y + 0.4}" r="3.6" fill="${INK}"/>` +
+        `<circle cx="${L + 1.8}" cy="${Y - 1}" r="1.3" fill="#fff"/><circle cx="${R + 1.8}" cy="${Y - 1}" r="1.3" fill="#fff"/>`
+      );
+    case 'dramatic':
+      // Theatrical "nooo!": eyes wide OPEN and rolled up to the heavens (a diva, never tears or squeezed eyes).
+      return (
+        `<circle cx="${L}" cy="${Y}" r="6.2" fill="#fff" ${O2}/><circle cx="${R}" cy="${Y}" r="6.2" fill="#fff" ${O2}/>` +
+        `<circle cx="${L + 0.4}" cy="${Y - 2.6}" r="3.1" fill="${INK}"/><circle cx="${R - 0.4}" cy="${Y - 2.6}" r="3.1" fill="${INK}"/>` +
+        `<circle cx="${L + 1.4}" cy="${Y - 3.6}" r="1.1" fill="#fff"/><circle cx="${R + 0.6}" cy="${Y - 3.6}" r="1.1" fill="#fff"/>`
       );
     case 'neutral':
       if (sleepyDefault) return open(L, 4.4, 5.2) + open(R, 4.4, 5.2) + line(`M${L - 5.5} ${Y - 3.5}q5.5-2 11 0M${R - 5.5} ${Y - 3.5}q5.5-2 11 0`, 2.2);
@@ -107,9 +114,11 @@ function browsFor(mood: FaceMood, hair: string): string {
   const c = shade(hair, 0.8);
   switch (mood) {
     case 'dramatic':
-      return line('M31 44q6-6 12-3M69 44q-6-6-12-3', 3.2, c);
+      // High, arched "oh the drama" brows.
+      return line('M31 43q6-7 13-3M69 43q-6-7-13-3', 3.2, c);
     case 'eek':
-      return line('M32 45q6-2 11 1M57 41q6-3 12 1', 3.2, c);
+      // Both brows popped up in surprise.
+      return line('M32 42q6-5 12-2M56 40q6-3 12 2', 3.2, c);
     case 'proud':
       return line('M32 43q6-4 12-1M56 42q6-3 12 1', 3.2, c);
     case 'sleepy':
@@ -126,11 +135,13 @@ function mouthFor(mood: FaceMood): string {
     case 'proud':
       return line('M40 66q10 8 20 0', 3);
     case 'eek':
-      return `<rect x="40" y="64.5" width="20" height="8" rx="4" fill="#fff" ${O2}/>` + line('M44 68.5h12M47 65v7M53 65v7', 1.6);
+      // A small round "o!".
+      return `<ellipse cx="50" cy="69" rx="3.4" ry="4" fill="#8a2f3f" ${O2}/>`;
     case 'sleepy':
       return `<ellipse cx="50" cy="69" rx="3.2" ry="3.6" fill="#8a2f3f" ${O2}/>`;
     case 'dramatic':
-      return `<ellipse cx="50" cy="70" rx="6.5" ry="8.5" fill="#8a2f3f" ${O2}/><ellipse cx="50" cy="74.5" rx="3.6" ry="2.6" fill="#ff8fa0"/>`;
+      // A theatrical "nooo~" — a rounded open mouth, tilted, with a tongue (comic, never distressed).
+      return `<path d="M42.5 66.5q7.5-3 15 0q-1 9-7.5 9t-7.5-9z" fill="#8a2f3f" ${O2}/><ellipse cx="50" cy="72.5" rx="3.4" ry="2" fill="#ff8fa0"/>`;
     case 'neutral':
     default:
       return line('M43 67q7 5 14 0', 3);

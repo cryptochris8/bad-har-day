@@ -52,12 +52,18 @@ interface Timed {
   canSkipAt: number;
   resolve: (() => void) | null;
   safety: ReturnType<typeof setTimeout> | null;
+  /** Wall-clock ms left on the safety net (kept while frozen, re-armed on thaw). */
+  safetyLeft: number;
+  safetyArmedAt: number;
 }
+
+const now = (): number => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now());
 
 abstract class TimedCard {
   readonly el: HTMLElement;
   protected run: Timed | null = null;
   private outing = false;
+  private frozen = false;
   /** 0 freezes the card (dev gallery); tests leave it at 1. */
   timeScale = 1;
 
@@ -70,6 +76,11 @@ abstract class TimedCard {
     return this.run !== null;
   }
 
+  /** Is the wall-clock safety net currently armed (tests)? */
+  get safetyArmed(): boolean {
+    return this.run?.safety != null;
+  }
+
   protected start(dur: number): Promise<void> {
     this.finish(); // a previous card still up resolves now
     this.outing = false;
@@ -77,18 +88,44 @@ abstract class TimedCard {
     this.el.classList.remove('is-out');
     replay(this.el, 'is-in');
     return new Promise<void>((resolve) => {
-      const run: Timed = { t: 0, dur, canSkipAt: SKIP_GUARD, resolve, safety: null };
+      const run: Timed = { t: 0, dur, canSkipAt: SKIP_GUARD, resolve, safety: null, safetyLeft: (dur + OUT_SECONDS + 2.5) * 1000, safetyArmedAt: 0 };
       this.run = run;
       // Safety net: if nobody pumps update() (tab hidden / game loop stalled) never hang the flow.
-      if (typeof setTimeout === 'function') {
-        run.safety = setTimeout(
-          () => {
-            if (this.run === run && this.timeScale > 0) this.finish();
-          },
-          (dur + OUT_SECONDS + 2.5) * 1000,
-        );
-      }
+      if (!this.frozen) this.arm(run);
     });
+  }
+
+  private arm(run: Timed): void {
+    if (typeof setTimeout !== 'function' || run.safety !== null) return;
+    run.safetyArmedAt = now();
+    run.safety = setTimeout(() => {
+      run.safety = null;
+      if (this.run !== run) return;
+      if (this.frozen || this.timeScale <= 0) return; // paused / dev freeze: re-armed on thaw
+      this.finish();
+    }, Math.max(0, run.safetyLeft));
+  }
+
+  /**
+   * Pause menu open: freeze the card completely — the dt timeline (the controller stops calling update) AND the
+   * wall-clock safety net, whose remaining time resumes when the game does.
+   */
+  setFrozen(frozen: boolean): void {
+    if (frozen === this.frozen) return;
+    this.frozen = frozen;
+    const r = this.run;
+    if (!r) return;
+    if (frozen) {
+      if (r.safety !== null) {
+        clearTimeout(r.safety);
+        r.safety = null;
+        r.safetyLeft = Math.max(0, r.safetyLeft - (now() - r.safetyArmedAt));
+      }
+      this.el.classList.add('is-frozen');
+    } else {
+      this.el.classList.remove('is-frozen');
+      this.arm(r);
+    }
   }
 
   /** Any confirm / tap: jump to the outro. */

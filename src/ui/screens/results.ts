@@ -69,10 +69,11 @@ export class ResultsScreen implements Screen {
       ],
       this.again,
     );
+    // A click on PLAY AGAIN / MENU acts at once (finishing the reveal first); only confirm / any key /
+    // background clicks merely skip the reveal.
     this.focus.gate = () => {
-      if (this.done) return true;
-      this.skip();
-      return false;
+      if (!this.done) this.skip();
+      return true;
     };
     this.el.addEventListener('click', (e) => {
       if (e.detail !== 0 && !this.done) this.skip();
@@ -188,8 +189,11 @@ export class ResultsScreen implements Screen {
     const stampEl = el('div', { class: `bhd-stamp bhd-stamp--${stamp.tone}` }, [el('span', { text: stamp.text })]);
     const arrival = el('div', { class: 'bhd-rc__arrival' }, [
       el('div', { class: 'bhd-rc__label', text: 'ARRIVED AT SCHOOL' }),
-      el('div', { class: 'bhd-rc__time' }, [el('span', { class: 'bhd-rc__timeico', html: iconSvg('school') }), el('span', { text: formatClock(report.arrival) })]),
-      stampEl,
+      // Time + stamp share a wrapping row: the stamp can never sit on top of the "AM".
+      el('div', { class: 'bhd-rc__timerow' }, [
+        el('div', { class: 'bhd-rc__time' }, [el('span', { class: 'bhd-rc__timeico', html: iconSvg('school') }), el('span', { text: formatClock(report.arrival) })]),
+        stampEl,
+      ]),
     ]);
 
     // ── grade ──

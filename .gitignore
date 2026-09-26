@@ -9,3 +9,6 @@ build
 shots/
 test-results/
 playwright-report/
+
+# Local Netlify folder
+.netlify

@@ -111,7 +111,7 @@ describe('bubbles / banners pure helpers', () => {
     expect(bubbleShift(100, 2000, 1000)).toBe(400); // wider than the screen → centred
   });
   it('enqueueBanner lets legendary / boss jump the queue and drops ordinary ones first', () => {
-    const b = (text: string, style: BannerSpec['style']): BannerSpec => ({ text, sub: '', style, seconds: 1, icon: null });
+    const b = (text: string, style: BannerSpec['style']): BannerSpec => ({ text, sub: '', style, seconds: 1, icon: null, pos: 'center' });
     let q: BannerSpec[] = [];
     q = enqueueBanner(q, b('a', 'info'));
     q = enqueueBanner(q, b('b', 'fun'));

@@ -72,7 +72,7 @@ function fakeChar(id: string, girl: boolean): FakeChar & Record<string, unknown>
   return c;
 }
 
-function fakeCtx(seed: number) {
+function fakeCtx(seed: number, choose: ((title: string, def?: string) => string) | null = null) {
   const plan = generatePlan(seed);
   const scene = new THREE.Scene();
   const root = new THREE.Group();
@@ -131,7 +131,8 @@ function fakeCtx(seed: number) {
     ui: {
       ...(anything() as object),
       takeClicks: () => [],
-      choice: () => new Promise<string>(() => {}),
+      choice: (title: string, _o: unknown, o?: { defaultId?: string }) =>
+        choose ? Promise.resolve(choose(title, o?.defaultId)) : new Promise<string>(() => {}),
       bossIntro: () => Promise.resolve(),
       handleMenuActions: () => true,
       portraits() {},
@@ -220,5 +221,41 @@ describe('hair activity (fake context)', () => {
     expect(() => act.update(0.1, weird)).not.toThrow();
     act.dispose();
     act.dispose(); // idempotent
+  });
+
+  it('pacing: Mom never comes just because the girls SAY they are done; DONE for everyone brings her', async () => {
+    const asked: string[] = [];
+    const f = fakeCtx(7, (title, def) => {
+      asked.push(title);
+      return def ?? 'keep';
+    });
+    const act = create();
+    act.start(f.ctx);
+    type Internals = { phase: string; session: { g: Record<GirlId, { field: Float32Array; declared: boolean; confirmed: boolean; doneAt: number }>; focus: GirlId; elapsed: number } };
+    const a = act as unknown as Internals;
+    for (let i = 0; i < 400 && a.phase !== 'brushing'; i++) await f.advance(0.1, act);
+    expect(a.phase).toBe('brushing');
+    // Everyone is past their "I'm done" threshold (but not 100 %), for a long time.
+    for (const g of GIRLS) a.session.g[g].field.fill(Math.max(0.03, 1 - a.session.g[g].doneAt - 0.03));
+    await f.advance(30, act);
+    const focus = a.session.focus;
+    expect(a.session.g[focus].declared).toBe(false); // the focused girl never says it herself
+    for (const g of GIRLS) if (g !== focus) expect(a.session.g[g].declared).toBe(true);
+    expect(a.phase).toBe('brushing');
+    // DONE (alt) for each girl, switching with next.
+    const press = (c: Partial<GameControls>) => act.update(0.05, { ...NO_CONTROLS, ...c });
+    for (let k = 0; k < 3; k++) {
+      press({ altPressed: true });
+      await f.advance(0.3, act);
+      press({ nextPressed: true });
+      await f.advance(0.3, act);
+    }
+    // Once everyone "said so" the player was asked (and kept brushing by default) — or already confirmed all.
+    for (const g of GIRLS) expect(a.session.g[g].confirmed).toBe(true);
+    await f.advance(4, act);
+    expect(a.phase).toBe('mom');
+    expect(asked.length).toBeGreaterThanOrEqual(1);
+    act.skip!();
+    act.dispose();
   });
 });

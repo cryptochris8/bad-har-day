@@ -418,6 +418,11 @@ export class GirlHairRig implements HairRig {
     return this.gridSample(this.proxyPos, u, v, out);
   }
 
+  /** Head-space outward surface normal (unit) — for overlays parented to `root` (guides, highlights). */
+  surfaceNormalLocal(u: number, v: number, out: THREE.Vector3): THREE.Vector3 {
+    return this.gridSample(this.proxyNrm, u, v, out).normalize();
+  }
+
   update(dt: number): void {
     if (this.disposed) return;
     const step = dt > 0 ? Math.min(dt, 0.1) : 0;

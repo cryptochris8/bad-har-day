@@ -90,3 +90,34 @@ describe('arrival calibration', () => {
     expect(P.some((r) => !r.score.flags.includes('drive:clean'))).toBe(true);
   });
 });
+
+describe('no shared state between drives (a second morning drives exactly like the first)', () => {
+  const runSteps = (sims: DriveSim[], policy: (s: DriveSim) => DriveInput) => {
+    for (let t = 0; t < 400 && sims.some((s) => !s.arrived); t += 1 / 30)
+      for (const s of sims) {
+        if (s.arrived) continue;
+        s.update(1 / 30, policy(s));
+        s.cues.length = 0;
+      }
+  };
+  const fresh = (seed: number) => {
+    const plan = generatePlan(seed, { daily: false, dateKey: null, coffeeOrder: 'black' });
+    return new DriveSim(ROUTE, placeEvents(plan.drive, F), plan.seed, { s: 0, lane: 1, v: 5 });
+  };
+  it('the same seed gives the same drive alone, after other drives, and stepped in lock-step with another sim', () => {
+    for (const seed of [148, 22, 99]) {
+      const alone = fresh(seed);
+      runSteps([alone], obedient);
+      for (const other of [1, 2, 3]) drive(other, great);
+      const later = fresh(seed);
+      runSteps([later], obedient);
+      const a = fresh(seed);
+      const b = fresh(seed + 1);
+      runSteps([a, b], obedient);
+      for (const s of [later, a]) {
+        expect(s.t).toBeCloseTo(alone.t, 9);
+        expect(s.summary()).toEqual(alone.summary());
+      }
+    }
+  });
+});

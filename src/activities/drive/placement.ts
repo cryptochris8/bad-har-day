@@ -48,7 +48,10 @@ interface Cand {
   crosswalk: number;
 }
 
-const FREE_STEP = 5;
+const FREE_STEP = 4;
+/** After a jogger / garbage truck (they move ahead before turning off), the next event needs extra room. */
+const MOVER_EXTRA = 25;
+const isMover = (k: DriveEvent) => k === 'jogger' || k === 'garbageTruck';
 
 function candidates(kind: DriveEvent, f: RouteFeatures): Cand[] {
   const out: Cand[] = [];
@@ -87,8 +90,8 @@ export function placeEvents(events: readonly DriveEvent[], f: RouteFeatures): Pl
   const cands = events.map((k) => candidates(k, f));
   const span = f.s1 - f.s0;
   const target = (i: number) => (n === 1 ? f.s0 + span / 2 : f.s0 + 8 + ((span - 16) * i) / (n - 1));
-  for (const gap of [60, 50, 40, 30, 20, 10, 0]) {
-    const res = solve(cands, target, gap);
+  for (const gap of [60, 55, 50, 45, 40, 35, 30, 25, 20, 10, 0]) {
+    const res = solve(cands, target, gap, events);
     if (res)
       return res.map((c, i) => ({ kind: events[i]!, s: c.s, light: c.light, crosswalk: c.crosswalk }));
   }
@@ -96,7 +99,7 @@ export function placeEvents(events: readonly DriveEvent[], f: RouteFeatures): Pl
   return events.map((kind, i) => ({ kind, s: target(i), light: -1, crosswalk: -1 }));
 }
 
-function solve(cands: Cand[][], target: (i: number) => number, gap: number): Cand[] | null {
+function solve(cands: Cand[][], target: (i: number) => number, gap: number, kinds: readonly DriveEvent[]): Cand[] | null {
   const n = cands.length;
   // dp[i][j] = best cost with event i at candidate j; prev[i][j] = index at i−1.
   const dp: number[][] = [];
@@ -115,8 +118,9 @@ function solve(cands: Cand[][], target: (i: number) => number, gap: number): Can
       }
       const pc = cands[i - 1]!;
       const pr = dp[i - 1]!;
+      const need = gap + (gap > 0 && isMover(kinds[i - 1]!) ? MOVER_EXTRA : 0);
       for (let k = 0; k < pc.length; k++) {
-        if (pc[k]!.s + gap > c.s || pc[k]!.s >= c.s) continue;
+        if (pc[k]!.s + need > c.s || pc[k]!.s >= c.s) continue;
         const v = pr[k]! + cost;
         if (v < row[j]!) {
           row[j] = v;

@@ -95,6 +95,15 @@ export class DriveSim implements SimCtx {
     this.lights = route.lights.map(() => 'green' as LightColor);
     this.lightDirty = route.lights.map(() => true);
     this.events = placed.map((p, i) => this.makeEvent(p, i));
+    // The jogger / garbage truck move ahead of where they appear: they turn off / pull over well BEFORE the next
+    // event (never through the crossing guard's kids or a goose parade).
+    for (let i = 0; i < this.events.length; i++) {
+      const e = this.events[i]!;
+      if (!(e instanceof Jogger) && !(e instanceof GarbageTruck)) continue;
+      const next = this.events[i + 1];
+      const room = (next ? next.s : route.dropoff.s0 - 40) - e.s - 28;
+      e.run = Math.max(18, Math.min(e.run, room));
+    }
   }
 
   private makeEvent(p: Placed, i: number): DriveEventLogic {

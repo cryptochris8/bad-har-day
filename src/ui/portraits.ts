@@ -8,7 +8,12 @@ import { faceSvg, lookOf } from './faces';
 import { iconSvg } from './icons';
 import type { IconId, Portrait, PortraitRow } from './types';
 
-const RING = `<svg class="bhd-portrait__ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle class="bhd-portrait__track" cx="50" cy="50" r="45"/><circle class="bhd-portrait__prog" cx="50" cy="50" r="45" pathLength="100" transform="rotate(-90 50 50)"/></svg>`;
+const RING =
+  `<svg class="bhd-portrait__ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false">` +
+  `<circle class="bhd-portrait__track" cx="50" cy="50" r="45"/>` +
+  `<circle class="bhd-portrait__prog" cx="50" cy="50" r="45" pathLength="100" transform="rotate(-90 50 50)"/>` +
+  `<g class="bhd-portrait__goal" style="display:none"><path class="bhd-portrait__goalink" d="M50 -1V14"/><path class="bhd-portrait__goalfill" d="M50 -1V14"/><circle class="bhd-portrait__goaldot" cx="50" cy="-2" r="4.2"/></g>` +
+  `</svg>`;
 
 interface PNode {
   root: HTMLElement;
@@ -23,6 +28,9 @@ interface PNode {
   progress: number;
   color: string;
   focused: boolean | null;
+  goalEl: SVGGElement;
+  goal: number;
+  goalMet: boolean | null;
 }
 
 interface CNode {
@@ -54,6 +62,8 @@ export class Portraits {
     private readonly onClick: (id: string) => void,
     private readonly glyphFor: (slot: 'primary' | 'secondary' | 'alt') => string,
     private readonly glyphKey: () => string,
+    /** Is the on-screen touch button for this slot showing right now? */
+    private readonly touchHas: (slot: 'primary' | 'secondary' | 'alt') => boolean = () => false,
   ) {
     this.row = el('div', { class: 'bhd-portraits__row' });
     this.chipsEl = el('div', { class: 'bhd-portraits__chips', attrs: { hidden: '' } });
@@ -83,6 +93,7 @@ export class Portraits {
       this.shown = true;
       this.el.hidden = false;
     }
+    setClass(this.el, 'is-compact', p.compact === true);
     let key = '';
     for (const it of p.items) key += it.id + '|';
     if (key !== this.idsKey) {
@@ -96,7 +107,7 @@ export class Portraits {
       }
     }
     for (const it of p.items) this.apply(this.nodes.get(it.id)!, it);
-    this.setChips(p.chips ?? []);
+    this.setChips(p.chips ?? [], p.compact === true);
   }
 
   /** Device / looks changed: re-apply the last row (chip glyphs and faces re-render as needed). */
@@ -116,7 +127,8 @@ export class Portraits {
       el('span', { class: 'bhd-portrait__pointer', attrs: { 'aria-hidden': 'true' } }),
     ]);
     onTap(root, () => this.onClick(id));
-    return { root, face, badge, name, status, faceKey: '', badgeId: '', nameText: '\u0000', statusText: '\u0000', progress: -1, color: '', focused: null };
+    const goalEl = root.querySelector('.bhd-portrait__goal') as SVGGElement;
+    return { root, face, badge, name, status, faceKey: '', badgeId: '', nameText: '#', statusText: '#', progress: -1, color: '', focused: null, goalEl, goal: -1, goalMet: null };
   }
 
   private apply(n: PNode, it: Portrait): void {
@@ -138,6 +150,21 @@ export class Portraits {
       n.progress = prog;
       setVar(n.root, '--p', String(prog));
       setClass(n.root, 'is-full', prog >= 1);
+    }
+    // Goal notch on the ring (e.g. 0.95 = "Mom approves at 95 %").
+    const goal = typeof it.goal === 'number' && Number.isFinite(it.goal) ? Math.round(Math.max(0, Math.min(1, it.goal)) * 1000) / 1000 : -1;
+    if (goal !== n.goal) {
+      n.goal = goal;
+      if (goal < 0) n.goalEl.style.display = 'none';
+      else {
+        n.goalEl.style.display = '';
+        n.goalEl.setAttribute('transform', `rotate(${(goal * 360).toFixed(1)} 50 50)`);
+      }
+    }
+    const met = goal >= 0 && prog >= goal;
+    if (met !== n.goalMet) {
+      n.goalMet = met;
+      setClass(n.root, 'is-goal-met', met);
     }
     const badge = it.badge ?? null;
     if (badge !== n.badgeId) {
@@ -168,7 +195,7 @@ export class Portraits {
     }
   }
 
-  private setChips(chips: readonly Chip[]): void {
+  private setChips(chips: readonly Chip[], compact: boolean): void {
     let key = '';
     for (const c of chips) key += c.id + '|';
     if (key !== this.chipsKey) {
@@ -198,6 +225,10 @@ export class Portraits {
         setHidden(n.ico, !c.icon);
         if (c.slot) n.root.dataset.slot = c.slot;
       }
+      // Close-ups on touch: a chip that duplicates a visible on-screen button (same slot) is hidden — the
+      // big thumb button already does it, and the screen stays clear.
+      const dup = compact && gk.startsWith('touch') && !!c.slot && this.touchHas(c.slot);
+      setClass(n.root, 'is-dup', dup);
       const dis = c.disabled === true;
       if (dis !== n.disabled) {
         n.disabled = dis;

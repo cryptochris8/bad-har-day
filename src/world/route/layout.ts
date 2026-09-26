@@ -46,7 +46,8 @@ export const STOP_BACK = 10;
 /** Traffic-light stop lines (s) — the contract's `lights`. */
 export const LIGHTS: readonly number[] = INTERSECTIONS.map((s) => s - STOP_BACK);
 /** Mid-block crosswalks (centre s) — the contract's `crosswalks`. */
-export const CROSSWALKS: readonly number[] = [72, 205, 282, 412, 468];
+// (placed so a morning's 4–5 events can always be spread out: see tests/activities/drive/placement.test.ts)
+export const CROSSWALKS: readonly number[] = [80, 168, 238, 292, 392, 468];
 /** Crosswalk stripe band half-depth (m along s). */
 export const CROSSWALK_HALF = 1.6;
 /** A car stops with its FRONT at crosswalk − CROSSWALK_STOP. */

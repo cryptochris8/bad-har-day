@@ -53,5 +53,7 @@ read-only references). The web-app profile above is general context only: no Nex
   Debug hooks: `window.__BHD__` (src/game/debug.ts), incl. `autopilot(true)` to play a whole morning by itself.
 - Screenshots: `node tools/shot.mjs "/?test=1&act=3" shots/x.png --until "window.__BHD__ && window.__BHD__.act()===3"`;
   walkthroughs: `node tools/walk.mjs "<url>" shots/w <steps…>` (steps documented in the file header).
-- GitHub: https://github.com/cryptochris8/bad-har-day (main). Not deployed yet — publishing (Netlify, `netlify.toml`
-  is ready) needs Chris's explicit approval each time.
+- GitHub: https://github.com/cryptochris8/bad-har-day (main).
+- Live at https://bad-hair-day.netlify.app (Netlify site `bad-hair-day`, team HySports, deployed from the CLI; this
+  folder is linked, no GitHub auto-deploys). Redeploy with `netlify deploy --build --prod`, **only with Chris's
+  explicit approval each time** (deploy a clean, fully tested commit — not a working tree with in-progress edits).
