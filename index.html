@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b2350" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Home-screen app: manifest + iOS tags. No service worker on purpose (always-fresh static deploy). -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="Bad Hair Day!" />
+    <meta name="application-name" content="Bad Hair Day!" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>BAD HAIR DAY!</title>
+    <meta name="description" content="Five family members. Three heads of hair. One black brush. One school morning. Somehow, everybody makes it out the door." />
+    <meta property="og:title" content="BAD HAIR DAY!" />
+    <meta property="og:description" content="Five family members. Three heads of hair. One black brush. One school morning." />
+    <style>
+      /* Full-screen, no scroll, no zoom, no text selection (docs/ARCHITECTURE.md DOM layering). */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #1b2350;
+        overscroll-behavior: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-text-size-adjust: 100%;
+      }
+      /* Layers inside #app: canvas → .bhd-fade → .bhd-touch / .bhd-pointer (z 2) → .bhd-ui (z 3). */
+      #app {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: #1b2350;
+        touch-action: none;
+        contain: strict;
+      }
+      #app > canvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+        z-index: 0;
+        outline: none;
+      }
+      #app > .bhd-fade {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: #1b1430;
+        opacity: 1;
+        pointer-events: none;
+        transition: opacity 0.45s ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- BEGIN loading splash (ui module may restyle this block) — static, before any JS; main.ts removes it. -->
+    <div id="bhd-loading" aria-live="polite">
+      <div class="bhd-ld-sun"></div>
+      <div class="bhd-ld-box">
+        <div class="bhd-ld-title" role="img" aria-label="Bad Hair Day!">
+          <span class="bhd-ld-a">BAD</span> <span class="bhd-ld-b">HAIR</span><br /><span class="bhd-ld-c">DAY<span class="bhd-ld-a">!</span></span>
+        </div>
+        <div class="bhd-ld-bar"><i></i></div>
+        <div class="bhd-ld-text">WAKING UP THE HOUSE…</div>
+      </div>
+    </div>
+    <style>
+      /* Matches the UI's boot splash (src/ui/styles.css .bhd-boot): pre-dawn sky with the sun coming up. */
+      #bhd-loading { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; overflow: hidden;
+        background: radial-gradient(ellipse 90% 70% at 50% 110%, #f7a88a 0, #9a7bb8 30%, #3b4d96 62%, #1b2350 100%);
+        color: #fff6e9; font: 800 14px/1.3 'Baloo 2', 'Arial Rounded MT Bold', system-ui, sans-serif; transition: opacity 0.35s ease; }
+      #bhd-loading.bhd-done { opacity: 0; pointer-events: none; }
+      .bhd-ld-sun { position: absolute; left: 50%; bottom: -30vmin; width: 60vmin; height: 60vmin; margin-left: -30vmin; border-radius: 50%;
+        background: radial-gradient(circle, #fff3c4 0 30%, #ffd24a 65%, rgba(255, 179, 58, 0) 71%); }
+      .bhd-ld-box { position: relative; display: grid; gap: 20px; justify-items: center; text-align: center; padding: 24px; }
+      .bhd-ld-title { font: 900 clamp(44px, 10vmin, 96px)/0.9 'Luckiest Guy', 'Arial Black', system-ui, sans-serif; letter-spacing: 1px;
+        -webkit-text-stroke: 0.1em #3a2330; paint-order: stroke fill; text-shadow: 0 0.06em 0 #3a2330, 0 0.11em 0 #3a2330; }
+      .bhd-ld-a { color: #ff7a6b; }
+      .bhd-ld-b { color: #ffc94a; }
+      .bhd-ld-c { display: inline-block; margin-top: 0.08em; font-size: 1.35em; color: #fff6e9; transform: rotate(-3deg); }
+      .bhd-ld-bar { position: relative; width: min(280px, 70vw); height: 18px; border: 3px solid #3a2330; border-radius: 12px; overflow: hidden;
+        background: #fff6e9; box-shadow: 0 4px 0 #3a2330; }
+      .bhd-ld-bar i { display: block; height: 100%; width: 45%; border-radius: 8px;
+        background: repeating-linear-gradient(-45deg, #ff7a6b 0 10px, #ffc94a 10px 20px); animation: bhd-ld 1.2s ease-in-out infinite alternate; }
+      .bhd-ld-text { letter-spacing: 3px; font-size: 13px; color: #fff6e9; text-shadow: 0 2px 0 #3a2330; }
+      @keyframes bhd-ld { from { transform: translateX(-10%); } to { transform: translateX(132%); } }
+      @media (prefers-reduced-motion: reduce) { .bhd-ld-bar i { animation: none; width: 100%; } }
+    </style>
+    <!-- END loading splash -->
+    <style>
+      .bhd-fatal { position: fixed; inset: 0; display: grid; place-content: center; gap: 10px; padding: 24px;
+        text-align: center; color: #fff6e9; font: 700 18px/1.4 system-ui, sans-serif; background: #1b2350; }
+      .bhd-fatal strong { font-size: 22px; }
+      .bhd-fatal p { margin: 0; max-width: 34em; font-weight: 500; opacity: 0.9; }
+    </style>
+    <noscript style="color: #fff6e9; font: 700 18px system-ui, sans-serif; padding: 24px; display: block">
+      BAD HAIR DAY! needs JavaScript and WebGL to run.
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

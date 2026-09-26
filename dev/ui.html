@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>BHD dev — UI gallery</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1b2350;
+        touch-action: none;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      /* A static fake "dollhouse at dawn" behind the UI (no 3D needed). */
+      .fake {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background: linear-gradient(180deg, #f6e7cf 0 58%, #d9a66b 58% 100%);
+        overflow: hidden;
+      }
+      .fake[data-sky='night'] {
+        background: linear-gradient(180deg, #2a3368 0 58%, #6d5a57 58% 100%);
+      }
+      .fake__floor {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 58%;
+        bottom: 0;
+        background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.06) 0 2px, transparent 2px 90px), linear-gradient(180deg, #d9a66b, #c48d55);
+      }
+      .fake[data-sky='night'] .fake__floor {
+        background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 90px), linear-gradient(180deg, #5c4a55, #463a4a);
+      }
+      .fake__win {
+        position: absolute;
+        top: 14%;
+        width: 16%;
+        height: 26%;
+        border: 10px solid #fff8ee;
+        border-radius: 6px;
+        background: linear-gradient(180deg, #3b4d96, #f7a88a 80%, #ffc27a);
+        box-shadow: 0 0 0 3px #b9824f;
+      }
+      .fake__lamp {
+        position: absolute;
+        width: 26%;
+        height: 40%;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 212, 154, 0.55), rgba(255, 212, 154, 0) 70%);
+      }
+      .fake__sofa {
+        position: absolute;
+        bottom: 26%;
+        width: 26%;
+        height: 16%;
+        border-radius: 22px 22px 10px 10px;
+        background: #3f8a8c;
+        box-shadow: inset 0 -12px 0 #2f6d6f;
+      }
+      .fake__rug {
+        position: absolute;
+        bottom: 8%;
+        left: 30%;
+        width: 40%;
+        height: 12%;
+        border-radius: 50%;
+        background: #e07a5f;
+        opacity: 0.8;
+      }
+      .fake__pal {
+        position: absolute;
+        width: 44px;
+        height: 92px;
+        margin: -92px 0 0 -22px;
+        border-radius: 22px 22px 14px 14px;
+        border: 3px solid #3a2330;
+        box-shadow: 0 6px 0 rgba(0, 0, 0, 0.15);
+      }
+      .fake__pal::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: -30px;
+        width: 40px;
+        height: 40px;
+        margin-left: -20px;
+        border-radius: 50%;
+        background: #f9d0ae;
+        border: 3px solid #3a2330;
+      }
+      .fake__pal--dog {
+        width: 60px;
+        height: 36px;
+        margin: -36px 0 0 -30px;
+        border-radius: 20px;
+      }
+      .fake__pal--dog::before {
+        width: 30px;
+        height: 30px;
+        top: -16px;
+        left: 80%;
+        background: #e0a458;
+      }
+      .dev-grid {
+        position: absolute;
+        inset: 16px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 12px;
+        align-content: start;
+        overflow: auto;
+        pointer-events: auto;
+        z-index: 5;
+      }
+      .dev-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 6px;
+        border: 3px solid #3a2330;
+        border-radius: 16px;
+        background: #fff6e9;
+        font: 700 12px 'Baloo 2', system-ui, sans-serif;
+        color: #3a2330;
+      }
+      .dev-cell svg {
+        width: 56px;
+        height: 56px;
+      }
+      .dev-cell .row {
+        display: flex;
+        gap: 6px;
+      }
+      .dev-btn {
+        display: grid;
+        place-items: center;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        border: 4px solid #3a2330;
+        box-shadow: 0 4px 0 #3a2330;
+        box-sizing: border-box;
+      }
+      .dev-btn svg {
+        width: 60%;
+        height: 60%;
+      }
+      .dev-btn--p {
+        background: #ff7a6b;
+        color: #fff6e9;
+      }
+      .dev-btn--s {
+        background: #fff6e9;
+        color: #ff7a6b;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./ui.ts"></script>
+  </body>
+</html>

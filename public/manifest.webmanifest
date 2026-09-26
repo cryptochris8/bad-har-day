@@ -1,0 +1,12 @@
+{
+  "name": "BAD HAIR DAY!",
+  "short_name": "Bad Hair Day",
+  "description": "Five family members. Three heads of hair. One black brush. One school morning.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#1b2350",
+  "theme_color": "#1b2350",
+  "icons": [{ "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

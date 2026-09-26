@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BHD dev — props &amp; fx</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1c1a2e; }
+      #app { position: fixed; inset: 0; }
+      #labels { position: fixed; inset: 0; pointer-events: none; z-index: 5; font: 700 11px/1.15 system-ui, sans-serif; }
+      #labels div {
+        position: absolute; transform: translate(-50%, 0); white-space: nowrap; color: #3a2330;
+        background: rgba(255, 246, 233, 0.86); padding: 1px 5px; border-radius: 7px; box-shadow: 0 1px 2px rgba(58, 35, 48, 0.35);
+      }
+      #labels div small { font-weight: 600; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="labels"></div>
+    <!-- ?cat=food|dish|mug|lunch|items|misc|all  &zoom=n  &view=dollhouse  &mug=<design>&fill=0..1&liquid=black|splash|creamSugar|latte
+         &lunch=open  &highlight=1 (or 0..1)  &dirty=1  &peek=1  &color=addy|ellie|heidi  &labels=0
+         ?fx=1 (FX gallery)  &fxkind=<kind> (one kind, close-up)  ?fx=fireworks -->
+    <script type="module" src="./props.ts"></script>
+  </body>
+</html>

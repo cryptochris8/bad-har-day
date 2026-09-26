@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>BHD dev — Audio Bench</title>
+    <style>
+      :root {
+        --cream: #fff4e3;
+        --plum: #3b2346;
+        --ink: #2a1833;
+        --coral: #ff8a73;
+        --sunshine: #ffd166;
+        --mint: #7fdcb4;
+        --lilac: #b9a3e3;
+        --sky: #8fd0f5;
+        --addy: #b48cf0;
+        --ellie: #5fcfbf;
+        --heidi: #ff8fa3;
+        --soft: #6d5a78;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: linear-gradient(180deg, #2b2150 0%, #5b3c73 45%, #d98a7a 100%) fixed;
+        color: var(--ink);
+        font: 15px/1.35 'Nunito', system-ui, sans-serif;
+        font-weight: 700;
+        padding: 16px;
+        min-height: 100vh;
+      }
+      header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 16px; }
+      h1 { margin: 0; font: 32px/1 'Luckiest Guy', system-ui; letter-spacing: 1px; color: var(--sunshine); text-shadow: 3px 3px 0 var(--ink); }
+      h2 { margin: 0 0 10px; font: 20px/1 'Luckiest Guy', system-ui; letter-spacing: 0.5px; color: var(--plum); }
+      h3 { margin: 10px 0 6px; font: 800 12px/1 'Baloo 2', system-ui; letter-spacing: 1px; text-transform: uppercase; color: var(--soft); }
+      .pill { padding: 5px 14px; border: 3px solid var(--ink); border-radius: 999px; background: var(--coral); color: var(--ink); font-weight: 900; }
+      .pill.on { background: var(--mint); }
+      #dbg { font: 12px/1.3 ui-monospace, monospace; color: #fff4e3; }
+      #unlock { font-size: 22px; padding: 14px 26px; background: var(--sunshine); }
+      #unlock.done { background: var(--mint); font-size: 15px; padding: 8px 14px; }
+      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+      .card { background: var(--cream); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 5px 5px 0 var(--ink); padding: 14px 16px; }
+      .card.wide { grid-column: 1 / -1; }
+      button {
+        font: inherit; font-weight: 800; color: var(--ink); background: #fff;
+        border: 3px solid var(--ink); border-radius: 12px; padding: 7px 12px; cursor: pointer;
+        box-shadow: 3px 3px 0 var(--ink); transition: transform 0.05s, box-shadow 0.05s;
+      }
+      button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+      button.active { background: var(--mint); }
+      button.primary { background: var(--sunshine); }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+      .btns { display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 7px; }
+      .btns button { padding: 6px 5px; font-size: 13px; }
+      label.slider { display: grid; grid-template-columns: 96px 1fr 44px; gap: 8px; align-items: center; margin: 5px 0; }
+      input[type='range'] { width: 100%; accent-color: var(--coral); }
+      label.check { display: inline-flex; gap: 6px; align-items: center; margin-right: 10px; }
+      .muted { color: var(--soft); font-weight: 700; font-size: 13px; margin: 6px 0; }
+      .loop { display: grid; grid-template-columns: 116px 1fr 1fr; gap: 8px; align-items: center; margin: 6px 0; }
+      .loop label { display: grid; grid-template-columns: 26px 1fr; gap: 4px; align-items: center; font-size: 12px; color: var(--soft); }
+      #meter { position: relative; height: 26px; border: 3px solid var(--ink); border-radius: 10px; background: #2a1833; overflow: hidden; }
+      #meterFill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--mint), var(--sunshine) 75%, var(--coral)); }
+      #meterPeak { position: absolute; top: 0; bottom: 0; width: 3px; background: #fff; left: 0; }
+      #meterDb { font: 12px ui-monospace, monospace; color: var(--soft); }
+      .babble { display: grid; grid-template-columns: 70px repeat(6, 1fr); gap: 5px; align-items: center; }
+      .babble button { padding: 5px 2px; font-size: 12px; }
+      .babble .who { font-weight: 900; font-size: 13px; }
+      #text { width: 100%; font: inherit; padding: 8px 10px; border: 3px solid var(--ink); border-radius: 10px; margin: 4px 0 10px; }
+      #log, #qa { overflow: auto; font: 12px/1.4 ui-monospace, monospace; background: #2a1833; color: #fff4e3; border: 3px solid var(--ink); border-radius: 10px; padding: 6px; white-space: pre; }
+      #log { height: 100px; }
+      #qa { max-height: 480px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Bad Hair Day · Audio Bench</h1>
+      <button id="unlock">Unlock audio</button>
+      <span id="lock" class="pill">locked</span>
+      <span id="dbg"></span>
+    </header>
+    <div class="grid">
+      <section class="card">
+        <h2>Mix</h2>
+        <label class="slider">Master <input id="vMaster" type="range" min="0" max="1" step="0.01" value="1" /><span id="vMasterV">1</span></label>
+        <label class="slider">Music <input id="vMusic" type="range" min="0" max="1" step="0.01" value="0.8" /><span id="vMusicV">0.8</span></label>
+        <label class="slider">SFX <input id="vSfx" type="range" min="0" max="1" step="0.01" value="1" /><span id="vSfxV">1</span></label>
+        <div class="row">
+          <label class="check"><input id="mute" type="checkbox" /> mute</label>
+          <label class="check"><input id="pause" type="checkbox" /> paused</label>
+          <button id="duck">duck 60 % · 2 s</button>
+        </div>
+        <h3>Output level</h3>
+        <div id="meter"><div id="meterFill"></div><div id="meterPeak"></div></div>
+        <div id="meterDb">—</div>
+      </section>
+      <section class="card">
+        <h2>Music</h2>
+        <div class="row" id="tracks"></div>
+        <label class="slider">Intensity <input id="intensity" type="range" min="0" max="1" step="0.01" value="0" /><span id="intensityV">0</span></label>
+        <label class="slider">Crossfade <input id="fade" type="range" min="0" max="4" step="0.1" value="1.2" /><span id="fadeV">1.2</span></label>
+        <p class="muted">Intensity ≥ 0.35 and ≥ 0.7 add layers (extra percussion, doublings; the rush also pushes its tempo).</p>
+      </section>
+      <section class="card">
+        <h2>Loops</h2>
+        <div id="loops"></div>
+        <p class="muted">Toggle a loop, then drag volume / pitch live (brushing: volume = stroke speed; pourStream: pitch = cup filling).</p>
+      </section>
+      <section class="card wide">
+        <h2>Babble</h2>
+        <input id="text" type="text" value="Good morning! Did somebody say pancakes?" maxlength="120" />
+        <div class="babble" id="babble"></div>
+      </section>
+      <section class="card wide">
+        <h2>Sound effects</h2>
+        <label class="slider">Pitch <input id="sfxPitch" type="range" min="0.5" max="2" step="0.05" value="1" /><span id="sfxPitchV">1</span></label>
+        <label class="slider">Volume <input id="sfxVol" type="range" min="0" max="1" step="0.05" value="1" /><span id="sfxVolV">1</span></label>
+        <label class="slider">Pan <input id="sfxPan" type="range" min="-1" max="1" step="0.05" value="0" /><span id="sfxPanV">0</span></label>
+        <div id="sfx"></div>
+      </section>
+      <section class="card wide">
+        <h2>Moments</h2>
+        <div class="row" id="scenes"></div>
+        <div id="log"></div>
+      </section>
+      <section class="card wide">
+        <h2>Offline QA (peak / RMS / length through the real mixer)</h2>
+        <div class="row" id="qaButtons"></div>
+        <div id="qa">—</div>
+      </section>
+    </div>
+    <script type="module" src="./audio.ts"></script>
+  </body>
+</html>
