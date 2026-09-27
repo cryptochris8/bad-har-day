@@ -173,7 +173,7 @@ export class Morning {
   private readonly persist = new THREE.Group();
   /** Dev/e2e: plays the whole morning by itself (starts chores, skips each activity after a moment). */
   autopilot = false;
-  /** Started with an act / activity jump (dev): the report is shown but never saved to the player's stats. */
+  /** A dev/test jump (URL params / debug hooks — set by the App): the report is shown but never saved to stats. */
   devJump = false;
   private readonly choreStarters = new Map<ChoreId, () => void>();
 
@@ -432,7 +432,6 @@ export class Morning {
 
   /** Dev/e2e: play one activity in its act's setting, then finish with a report. */
   private async runSingle(id: ActivityId): Promise<void> {
-    this.devJump = true;
     this.setupScene();
     const act: ActNumber = id === 'wake' ? 2 : id === 'hair' ? 3 : id === 'rush' ? 4 : id === 'drive' ? 5 : 1;
     if (act > 1) this.skipTo(act);
@@ -451,12 +450,22 @@ export class Morning {
   private skipTo(act: ActNumber): void {
     const d = this.d;
     const { family, world, npcs } = d;
-    this.devJump = true;
     this.state.coffee.made = true;
     this.state.coffee.stars = 2;
     this.state.coffee.mug = 'sunflower';
     this.state.dogOut = true;
     d.clock.jumpTo(ACTS[act - 1]!.start);
+    // Ashley's coffee is waiting on the table (Act I's payoff) for any start after 5:15.
+    if (!this.persist.getObjectByName('ashleys-coffee')) {
+      const mug = makeMug('sunflower');
+      mug.setFill(0.85);
+      mug.setLiquid(COFFEE_COLORS.splash);
+      mug.setSteam(true);
+      mug.root.name = 'ashleys-coffee';
+      const spot = d.world.anchor('ashleySpot');
+      mug.root.position.set(spot.x, spot.y, spot.z);
+      this.persist.add(mug.root);
+    }
     if (act < 3) return; // Act II starts from the beds
     for (const g of GIRLS) {
       const c = family.girl(g);
@@ -480,16 +489,6 @@ export class Morning {
     world.bed('master').setBlanket('made');
     const seat = world.anchor('seatAshley');
     npcs.place(ashley, { x: seat.x + Math.sin(seat.yaw) * -0.5, y: 0, z: seat.z + Math.cos(seat.yaw) * -0.5 }, seat.yaw);
-    if (!this.persist.getObjectByName('ashleys-coffee')) {
-      const mug = makeMug('sunflower');
-      mug.setFill(0.85);
-      mug.setLiquid(COFFEE_COLORS.splash);
-      mug.setSteam(true);
-      mug.root.name = 'ashleys-coffee';
-      const spot = world.anchor('ashleySpot');
-      mug.root.position.set(spot.x, spot.y, spot.z);
-      this.persist.add(mug.root);
-    }
     family.chris.setSleepiness(0);
     if (act >= 5) {
       family.chris.setOutfit('day');

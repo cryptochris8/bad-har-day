@@ -249,11 +249,13 @@ describe('settings', () => {
     expect(cmds[1]).toEqual({ type: 'settings', patch: { muted: true } });
     const toggle = ui.screenEl('settings').querySelectorAll('.bhd-toggle')[0]!;
     expect(toggle.classList.contains('is-on')).toBe(true);
+    act('down', 'right'); // Start the morning at → 6:00 (the girls can skip Chris's early shift)
+    expect(cmds[2]).toEqual({ type: 'settings', patch: { startAct: 2 } });
     for (let i = 0; i < 5; i++) act('down'); // → Graphics
     act('right');
-    expect(cmds[2]).toEqual({ type: 'settings', patch: { quality: 'high' } });
+    expect(cmds[3]).toEqual({ type: 'settings', patch: { quality: 'high' } });
     act('down', 'down', 'right'); // Buttons on the → left
-    expect(cmds[3]).toEqual({ type: 'settings', patch: { touchHand: 'left' } });
+    expect(cmds[4]).toEqual({ type: 'settings', patch: { touchHand: 'left' } });
     expect(ui.debug.settings.touchHand).toBe('left');
   });
 

@@ -3,6 +3,7 @@
 import type { MenuAction } from '../../input/types';
 import type { Quality } from '../../render/types';
 import type { Settings } from '../../storage/types';
+import { START_POINTS } from '../../plan/types';
 import { button, el } from '../dom';
 import type { FocusGroup, FocusItem } from '../focus';
 import { iconSvg, uiIcon } from '../icons';
@@ -47,6 +48,18 @@ export class SettingsScreen implements Screen {
     add(vol('Sound effects', 'sfx'));
     add(tog('Mute everything', 'muted'));
     cols.appendChild(section('PLAY', iconSvg('heart')));
+    // Where a morning begins — the girls can skip Chris's early shift and start at their part.
+    add(
+      choiceRow<Settings['startAct']>(
+        'Start the morning at',
+        '',
+        ([1, 2, 3, 4, 5] as const).map((a) => ({ value: a, text: `${START_POINTS[a].time} ${START_POINTS[a].short}` })),
+        () => s().startAct,
+        (v) => this.ctx.changeSettings({ startAct: v }),
+        fg,
+        'bhd-setrow--start',
+      ),
+    );
     add(tog('Helpful hints', 'hints'));
     add(tog('Vibration', 'vibration'));
     add(tog('Screen shake', 'screenShake'));

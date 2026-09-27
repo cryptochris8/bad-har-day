@@ -94,6 +94,15 @@ export interface ActInfo {
 /** Minutes since midnight. 315 = 5:15 AM. */
 export const T = (h: number, m: number): number => h * 60 + m;
 
+/** "Start the morning at" choices (Settings.startAct): short chip text + a friendly description. */
+export const START_POINTS: Readonly<Record<ActNumber, { time: string; short: string; long: string }>> = {
+  1: { time: '5:15', short: 'All', long: '5:15 · the whole morning' },
+  2: { time: '6:00', short: 'Wake', long: '6:00 · Wake up, girls!' },
+  3: { time: '6:30', short: 'Hair', long: '6:30 · Hair time' },
+  4: { time: '7:15', short: 'Door', long: '7:15 · Out the door' },
+  5: { time: '7:50', short: 'Drive', long: '7:50 · The school run' },
+};
+
 export const ASHLEY_LEAVES = T(7, 45);
 export const SCHOOL_DEADLINE = T(8, 5);
 

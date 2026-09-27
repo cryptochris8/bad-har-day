@@ -249,7 +249,9 @@ babble voices per character (pitch/timbre per person).
 ## 13. Settings & Family Setup
 
 Settings: master/music/SFX volume, screen shake, reduced motion, quality (auto/high/low), touch controls
-(auto/on/off, left-handed), vibration, show hints.
+(auto/on/off, left-handed), vibration, show hints, and **Start the morning at** (5:15 whole morning · 6:00 Wake up ·
+6:30 Hair time · 7:15 Out the door · 7:50 School run) so the girls can skip Chris's early shift and jump straight to their
+part — NEW / DAILY MORNING begin there, and only the parts actually played are scored and earn awards.
 **Family Setup**: per member hair colour + skin tone (preset swatches), Chris beard toggle, glasses toggles,
 Ashley's coffee order, the dog's name + coat. Stored locally; purely cosmetic.
 

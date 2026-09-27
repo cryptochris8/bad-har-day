@@ -1,5 +1,6 @@
 // Title (animated logo + tagline + "press any button"; transparent over the 3D house) and the main
 // menu (NEW MORNING · DAILY MORNING · FAMILY SETUP · HOW TO PLAY · SETTINGS · CREDITS).
+import { START_POINTS } from '../../plan/types';
 import type { MenuAction } from '../../input/types';
 import { button, el, onClick, setText } from '../dom';
 import type { FocusGroup, FocusItem } from '../focus';
@@ -70,6 +71,7 @@ export class MenuScreen implements Screen {
   readonly el: HTMLElement;
   readonly focus: FocusGroup;
   private readonly newBtn: HTMLButtonElement;
+  private readonly newSub: HTMLElement;
   private readonly dailySub: HTMLElement;
   private readonly stats: HTMLElement;
   private readonly hint: HTMLElement;
@@ -78,6 +80,7 @@ export class MenuScreen implements Screen {
   constructor(private readonly ctx: UiCtx) {
     this.el = screenEl('menu');
     this.newBtn = button('bhd-btn--primary bhd-btn--xl bhd-menu__new', 'NEW MORNING', uiIcon('sunrise'), 'A brand-new, totally random morning');
+    this.newSub = this.newBtn.querySelector('.bhd-btn__sub') as HTMLElement;
     const daily = button('bhd-btn--lg bhd-menu__daily', 'DAILY MORNING', uiIcon('calendar'), '');
     this.dailySub = daily.querySelector('.bhd-btn__sub') as HTMLElement;
     const family = button('bhd-menu__small', 'FAMILY SETUP', uiIcon('family'));
@@ -125,6 +128,8 @@ export class MenuScreen implements Screen {
   }
 
   refresh(): void {
+    const start = this.ctx.settings.startAct;
+    setText(this.newSub, start > 1 ? `Starts at ${START_POINTS[start].long}` : 'A brand-new, totally random morning');
     const best = this.ctx.dailyBest;
     setText(this.dailySub, typeof best === 'number' && best > 0 ? `Today’s best: ★ ${best} — go again?` : 'The same morning for everyone today');
     const s = this.ctx.stats;

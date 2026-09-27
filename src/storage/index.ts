@@ -30,6 +30,7 @@ export function sanitizeSettings(v: unknown): Settings {
     touchHand: oneOf(s.touchHand, ['right', 'left'] as const, d.touchHand),
     vibration: bool(s.vibration, d.vibration),
     hints: bool(s.hints, d.hints),
+    startAct: typeof s.startAct === 'number' && [1, 2, 3, 4, 5].includes(s.startAct) ? (s.startAct as Settings['startAct']) : d.startAct,
   };
 }
 

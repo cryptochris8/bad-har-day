@@ -19,6 +19,11 @@ export interface Settings {
   vibration: boolean;
   /** Show gentle hint bubbles ("Start lower — work the ends first!"). */
   hints: boolean;
+  /**
+   * Where NEW / DAILY MORNING begins: 1 = 5:15 (the whole morning, Chris's early shift) … 5 = 7:50 (the school run).
+   * Lets the girls skip straight to their part (e.g. 3 = Hair time). Only the parts actually played are scored.
+   */
+  startAct: 1 | 2 | 3 | 4 | 5;
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
@@ -33,6 +38,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   touchHand: 'right',
   vibration: true,
   hints: true,
+  startAct: 1,
 });
 
 export interface FamilySetup {

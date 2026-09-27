@@ -37,7 +37,11 @@ export function pickAwards(input: ReportInput): Award[] {
     if (!out.some((a) => a.id === id)) out.push({ id, title, blurb, icon });
   };
 
-  const allApproved = GIRLS.every((g) => hair[g].smooth >= 0.95 && !hair[g].momFinished);
+  // Awards tied to a part of the morning need that part to have been PLAYED (a morning can start later than 5:15).
+  const played = (id: ActivityId) => records.some((r) => r.id === id && r.stars > 0);
+  const playedHair = played('hair');
+  const playedActI = (['dog', 'coffee', 'lunch', 'trash', 'dishes'] as const).some(played);
+  const allApproved = playedHair && GIRLS.every((g) => hair[g].smooth >= 0.95 && !hair[g].momFinished);
   if (allApproved) add('momApproved3', 'MOM APPROVED ×3', 'Three heads of hair passed inspection on the first try.', 'crown');
   if (starsOf(records, 'coffee') === 3 || has('coffee:perfect')) add('coffeeArtisan', 'COFFEE ARTISAN', "Ashley's coffee: exactly how she likes it.", 'coffee');
   if (starsOf(records, 'dog') === 3 || has('dog:fast')) add('dogWhisperer', 'DOG WHISPERER', `${input.dogName} came back inside on the first call.`, 'dog');
@@ -47,16 +51,17 @@ export function pickAwards(input: ReportInput): Award[] {
   if (starsOf(records, 'drive') === 3) add('carpoolCaptain', 'CARPOOL CAPTAIN', 'Smoothest school run in the neighbourhood.', 'car');
   if (starsOf(records, 'dishes') === 3) add('dishTetris', 'DISHWASHER TETRIS MASTER', 'Every plate in its place.', 'dishes');
   if (starsOf(records, 'trash') === 3) add('curbside', 'CURBSIDE CHAMPION', 'The bag made it. All of it.', 'trash');
-  if (input.loud === 0) add('ninja', 'QUIET AS A NINJA', 'Not a single creaky floorboard before 6:00.', 'star');
+  if (playedActI && input.loud === 0) add('ninja', 'QUIET AS A NINJA', 'Not a single creaky floorboard before 6:00.', 'star');
   if (input.arrival <= T(7, 58)) add('earlyBird', 'EARLY BIRD', 'At school before the bell even thought about ringing.', 'clock');
 
-  const solo = GIRLS.filter((g) => hair[g].solo);
+  const solo = playedHair ? GIRLS.filter((g) => hair[g].solo) : [];
   if (!allApproved && solo.length > 0) add('solo', 'SOLO BRUSHER', `${solo.map((g) => DISPLAY_NAME[g]).join(' & ')} did it all by herself!`.replace('by herself', solo.length > 1 ? 'by themselves' : 'by herself'), 'brush');
 
   let mvp: GirlId | null = null;
-  for (const g of GIRLS) if (hair[g].blackBrushSeconds > 0 && (mvp === null || hair[g].blackBrushSeconds > hair[mvp].blackBrushSeconds)) mvp = g;
+  if (playedHair)
+    for (const g of GIRLS) if (hair[g].blackBrushSeconds > 0 && (mvp === null || hair[g].blackBrushSeconds > hair[mvp].blackBrushSeconds)) mvp = g;
   if (mvp !== null && out.length < 4) add('blackBrushMvp', `BLACK BRUSH MVP: ${DISPLAY_NAME[mvp].toUpperCase()}`, 'Held the legendary brush the longest. Rightfully so.', 'blackBrush');
-  if (plan.dogQuirk === 'leaf' && out.length < 2) add('leafChaser', 'LEAF CHASER', `${input.dogName} won the war against the leaf.`, 'dog');
+  if (played('dog') && plan.dogQuirk === 'leaf' && out.length < 2) add('leafChaser', 'LEAF CHASER', `${input.dogName} won the war against the leaf.`, 'dog');
   if (out.length < 2) add('groupHug', 'GROUP HUG', 'Five family members. One big squeeze on the way out.', 'heart');
   if (out.length < 2) add('madeIt', 'WE MADE IT', 'Somehow, everybody made it out the door.', 'school');
   return out.slice(0, 4);

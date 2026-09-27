@@ -56,6 +56,10 @@ describe('storage', () => {
     expect(s.quality).toBe('auto');
     expect(s.touchHand).toBe('left');
     expect(s.hints).toBe(true);
+    expect(s.startAct).toBe(1);
+    expect(sanitizeSettings({ startAct: 3 }).startAct).toBe(3);
+    expect(sanitizeSettings({ startAct: 9 }).startAct).toBe(1);
+    expect(sanitizeSettings({ startAct: '3' }).startAct).toBe(1);
     const d = sanitizeSave({ stats: { mornings: -3, bestArrival: 99999, awards: { a: 2, b: 'x' } }, seen: { tip: true, bad: 1 } });
     expect(d.stats.mornings).toBe(0);
     expect(d.stats.bestArrival).toBeNull();

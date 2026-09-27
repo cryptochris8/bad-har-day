@@ -21,6 +21,8 @@ at runtime. Keyboard, mouse, touch and gamepad. Static site — no backend, no a
 Every morning is seeded (chores, dog quirk, wake-up styles, hair conditions, who grabs the black brush, missing
 items, the drive). **NEW MORNING** is random; **DAILY MORNING** is the same for everyone on a given date.
 **FAMILY SETUP** lets you pick hair colours, skin tones, glasses/beard, Ashley's coffee order and the dog's name.
+**SETTINGS → Start the morning at** lets the girls skip Chris's early shift and start at 6:00 (wake-up), 6:30 (hair
+time), 7:15 (out the door) or 7:50 (the school run).
 
 ## Controls
 

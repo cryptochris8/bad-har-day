@@ -28,8 +28,8 @@ export function createDebugHooks(app: App) {
     startMorning: (seed?: number) => app.newMorning({ seed: seed ?? null }),
     /** Jump to an act number (1–5) or play one activity id. */
     jumpTo: (target: number | string) => {
-      if (typeof target === 'number' && target >= 1 && target <= 5) app.newMorning({ act: target as ActNumber });
-      else if (typeof target === 'string' && ACTIVITY_IDS.includes(target)) app.newMorning({ activity: target as ActivityId });
+      if (typeof target === 'number' && target >= 1 && target <= 5) app.newMorning({ act: target as ActNumber, dev: true });
+      else if (typeof target === 'string' && ACTIVITY_IDS.includes(target)) app.newMorning({ activity: target as ActivityId, dev: true });
     },
     skipActivity: () => app.morning?.skipActivity(),
     /** Let the morning play itself (starts chores, skips activities) — e2e / smoke runs. */

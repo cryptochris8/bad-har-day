@@ -151,7 +151,7 @@ describe('report', () => {
     const a = pickAwards(input());
     expect(a.map((x) => x.id)).toContain('coffeeArtisan');
     expect(a.map((x) => x.id)).toContain('solo');
-    const mvp = pickAwards(input({ records: [] })).find((x) => x.id === 'blackBrushMvp');
+    const mvp = pickAwards(input({ records: [{ id: 'hair', label: 'Hair', stars: 2, flags: [] }] })).find((x) => x.id === 'blackBrushMvp');
     expect(mvp?.title).toContain('ELLIE');
   });
 
@@ -167,5 +167,23 @@ describe('report', () => {
       }),
     );
     expect(a.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('awards need their part of the morning to have been played (a morning can start at 7:15)', () => {
+    const lateStart = input({
+      records: [
+        { id: 'rush', label: 'Rush', stars: 2, flags: [] },
+        { id: 'drive', label: 'Drive', stars: 2, flags: [] },
+      ],
+      loud: 0,
+      hair: {
+        addy: { smooth: 1, momFinished: false, blackBrushSeconds: 30, solo: true },
+        ellie: { smooth: 1, momFinished: false, blackBrushSeconds: 10, solo: true },
+        heidi: { smooth: 1, momFinished: false, blackBrushSeconds: 0, solo: true },
+      },
+    });
+    const ids = pickAwards(lateStart).map((a) => a.id);
+    for (const id of ['momApproved3', 'ninja', 'solo', 'blackBrushMvp', 'leafChaser']) expect(ids).not.toContain(id);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
   });
 });

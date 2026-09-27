@@ -5881,3 +5881,28 @@
   animation-delay: 0s !important;
   transition-duration: 0.01s !important;
 }
+
+/* "Start the morning at" (Settings): on narrow screens the label sits on top and the five start points share one
+   even row below it ("6:30" / "Hair" wrap inside each chip). */
+@media (max-width: 600px) {
+  .bhd-setrow--start {
+    flex-wrap: wrap;
+  }
+  .bhd-setrow--start .bhd-setrow__label {
+    flex-basis: 100%;
+  }
+  .bhd-setrow--start .bhd-segs {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .bhd-setrow--start .bhd-seg {
+    min-width: 0;
+    padding: 4px 2px;
+  }
+  .bhd-setrow--start .bhd-seg__t {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.1;
+  }
+}

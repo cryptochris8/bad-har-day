@@ -132,7 +132,7 @@ export class App {
     this.fader.fromBlack();
     if (this.params.autostart || this.params.act !== null || this.params.activity !== null) {
       this.ui.showScreen('none');
-      this.newMorning({ seed: this.params.seed, act: this.params.act, activity: this.params.activity });
+      this.newMorning({ seed: this.params.seed, act: this.params.act, activity: this.params.activity, dev: true });
       return;
     }
     if (this.params.noBoot) {
@@ -221,7 +221,11 @@ export class App {
 
   // ── morning ───────────────────────────────────────────────────────────────
 
-  newMorning(opts: { seed?: number | null; daily?: boolean; act?: ActNumber | null; activity?: ActivityId | null } = {}): void {
+  /**
+   * Start a morning. `act` defaults to Settings.startAct (the girls can skip Chris's early shift). `dev` = a dev/test
+   * jump (URL params, debug hooks): its report is shown but never saved to the player's stats.
+   */
+  newMorning(opts: { seed?: number | null; daily?: boolean; act?: ActNumber | null; activity?: ActivityId | null; dev?: boolean } = {}): void {
     this.morning?.dispose();
     const today = dateKeyOf(new Date());
     const seed = opts.daily ? dailySeed(today) : (opts.seed ?? (Math.floor(Math.random() * 0x7fffffff) ^ Date.now()) >>> 0);
@@ -257,7 +261,9 @@ export class App {
       plan,
     );
     this.morning = m;
-    m.start({ act: opts.act ?? null, activity: opts.activity ?? null });
+    m.devJump = !!opts.dev;
+    const startAct = this.save.data.settings.startAct;
+    m.start({ act: opts.act ?? (startAct > 1 ? startAct : null), activity: opts.activity ?? null });
   }
 
   pause(): void {
